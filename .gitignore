@@ -4,6 +4,7 @@
 # Local build products
 Mac资源监控.app/
 MacResourceMonitor-*.zip
+MacResourceMonitor-*.zip.sha256
 *.dSYM/
 .build/
 DerivedData/

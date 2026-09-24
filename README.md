@@ -8,90 +8,72 @@
 
 <h1 align="center">Mac Resource Monitor</h1>
 
-<p align="center">System metrics, process traffic, storage tools, and Codex quota — in one native macOS app.</p>
+<p align="center">Live system telemetry, proxy-aware process traffic, Codex & Antigravity quota tracking, and USB-C / Thunderbolt port diagnostics — in a clean, minimalist native macOS app.</p>
 
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111111?logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-0A84FF">
-  <img alt="Version" src="https://img.shields.io/badge/version-2.6.0-7C3AED">
+  <img alt="Version" src="https://img.shields.io/badge/version-2.7.0-0A84FF">
   <img alt="CI" src="https://github.com/svsvnm/MacResourceMonitor/actions/workflows/ci.yml/badge.svg">
 </p>
 
-> Current version: **2.6.0 (Build 45)**
+> Current version: **2.7.0 (Build 46)**
 
-A SwiftUI utility with a Liquid Glass interface and a compact menu bar panel. Check your Mac's resource usage, find bandwidth-heavy processes, inspect connected ports, and manage storage without switching between several apps.
+Built with SwiftUI using a restrained, modern minimalist macOS aesthetic (monochrome hierarchy with a single system blue accent) and a compact menu bar popover. Designed for zero-side-effect read-only hardware telemetry, proxy/TUN-penetrating per-process network attribution, dual AI provider quota monitoring (**Codex** & **Antigravity**), and USB-C / Thunderbolt power & cable inspection.
 
 ## Download and Install
 
-**[Download MacResourceMonitor-2.6.0.zip](https://github.com/svsvnm/MacResourceMonitor/releases/download/v2.6.0/MacResourceMonitor-2.6.0.zip)** · [Release notes and checksums](https://github.com/svsvnm/MacResourceMonitor/releases/latest)
+**[Download MacResourceMonitor-2.7.0.zip](https://github.com/svsvnm/MacResourceMonitor/releases/download/v2.7.0/MacResourceMonitor-2.7.0.zip)** · [Release notes and checksums](https://github.com/svsvnm/MacResourceMonitor/releases/latest)
 
 Requires **macOS 26 or later and Apple Silicon**. Intel Macs and earlier macOS versions are not supported.
 
 1. Download and extract the ZIP.
 2. Quit any running copy, then drag **Mac资源监控.app** into Applications, replacing the old copy if updating.
-3. Open the app from Applications. Closing its window keeps the menu bar monitor running; choose **Quit** in the menu to exit.
+3. Open the app from Applications. Closing the main window keeps the menu bar monitor running; click **退出 (Quit)** at the bottom of the menu popover to exit completely.
 
 The app is ad-hoc signed, not Apple Developer ID signed or notarized. If macOS blocks opening it, review the source and use the approval option in **System Settings → Privacy & Security**. Do not disable system-wide security protections.
 
 For an integrity check, download the matching `.zip.sha256` file into the same directory and run:
 
 ```zsh
-shasum -a 256 -c MacResourceMonitor-2.6.0.zip.sha256
+shasum -a 256 -c MacResourceMonitor-2.7.0.zip.sha256
 ```
 
 ## Features
 
 | Module | What it shows or does |
 | --- | --- |
-| System | CPU and memory usage, history, network rates, temperature, fans, battery and power readings, and process rankings |
-| Process Traffic | Per-process download/upload rates, PID, search, sorting, and traffic accumulated during visible monitoring |
-| AI Usage | Codex subscription quota remaining, available plan information, reset times, and manual refresh |
-| Ports | Available USB-C, MagSafe, USB4, Thunderbolt, DisplayPort, USB-PD, and cable E-Marker information |
-| Storage | Directory sizes, large files over 500 MB of allocated space, Finder shortcuts, and selected cache/log/Xcode/Trash cleanup |
-| App Uninstaller | Third-party apps ranked by size; move selected apps and exact Bundle ID-matched remnants to Trash |
+| System | CPU and memory load, 2-minute dual-series trend chart, core temperature, fan speed, battery & charging power, top CPU processes, and system environment |
+| Process Traffic | Captures real client apps behind `127.0.0.1` local system proxies and `utun` virtual interfaces; resolves `.app` host bundles and icons for `Helper` subprocesses; strips duplicate proxy/TUN daemon forwarding totals by default |
+| AI Usage | Dual-provider subscription quota monitoring for **OpenAI Codex** (5h session + 7d weekly windows) and **Google Antigravity** (Gemini pool + Claude/GPT pool, 5h & 7d windows) with instant switching |
+| Ports | Read-only inspection of USB-C, MagSafe, USB4, Thunderbolt, DisplayPort, negotiated USB-PD power limits, and cable E-Marker identity |
 
-The menu panel includes key system readings, the **top three currently active processes by traffic**, and a shared Codex quota summary.
+The menu bar popover provides an at-a-glance view of core system load, **top three active network processes**, hardware power state, and a switchable **Codex / Antigravity quota summary**.
 
-## Refresh and Power Use
+## Refresh Policy and Low Power Design
 
-- Lightweight system metrics refresh about every **2 seconds**. The menu bar title keeps displaying CPU temperature and network speed when the main window is closed.
-- Process traffic runs only while the menu panel or Traffic page is visible. Both views share one collector; hiding both stops sampling and clears live rates.
-- Expensive process rankings, fan, power, and cable queries follow the visibility of the relevant panels.
-- The menu uses a shared display snapshot and stable inner surfaces to limit repeated UI updates and glass compositing.
-
-Process traffic uses read-only snapshots from macOS `nettop`, with no VPN or Network Extension. It is **not a complete traffic ledger**: short-lived connections and traffic while hidden may be missing. It excludes local loopback and does not show domains, request contents, or connection rules.
-
-## Set Up Codex Quota
-
-1. Sign into Codex with your subscription account using the Codex CLI or a supported desktop app with a bundled CLI.
-2. Open **AI 用量 (AI Usage)** in the sidebar, or open the menu panel.
-3. Use **Refresh** after signing in or if a query fails.
-
-This integration uses the bundled **CodexBar CLI v0.56.5**, with only the Codex CLI source enabled. It displays the quota windows actually returned by the account; missing data stays unavailable, never a fabricated zero. It does not measure API billing or redeem usage-reset credits.
-
-Automatic queries run at most once per **minute** while either view is visible, or every **5 minutes** in Low Power Mode or under serious thermal pressure. Hiding both views cancels the query and stops scheduling. Transient failures mark cached results as stale; authentication failures clear them.
+- **Lightweight System Telemetry**: Refreshes every **2 seconds**. Closing the main window leaves the menu bar item displaying live CPU temperature and network throughput.
+- **Fast Baseline & Visibility-Scoped Process Traffic**: `nettop` sampling runs only while the menu popover or Process Traffic view is open. Cold start uses a **0.32s fast differential baseline** for sub-second initial rates and reuses the in-memory baseline when switching tabs within 15 seconds; closing both views stops sampling immediately.
+- **Visibility-Scoped AI Quota Polling**: Queries run at most once per **minute** while visible (or every **5 minutes** in Low Power Mode / elevated thermal pressure), stopping completely when hidden.
 
 ## Privacy, Safety, and Limits
 
-- System and storage data are processed locally. The app has no telemetry upload. **Codex quota is an online feature** that queries through your signed-in Codex CLI; other modules do not require an account.
-- The integration does not send chat contents, import browser cookies, or scan local cost history. Quota results are cached only in memory.
-- Hardware and network monitoring are read-only: no fan control, charging-policy changes, or network reconfiguration.
-- Cleanup requires confirmation and targets only the listed items. Personal folders are not automatically cleaned. App removal uses Trash; **emptying Trash is permanent**.
-- Temperature, fan, charging, and cable fields depend on the hardware and data exposed by macOS. Negotiated USB-PD limits are not actual charging power.
-- Protected directories, unindexed files, and cloud-only items may be missing from storage results. Unavailable readings and incomplete scans are reported instead of guessed.
+- All hardware, process, and port metrics are processed locally in memory with zero telemetry upload and no kernel extensions, VPNs, or privileged daemons.
+- Process traffic uses read-only byte counters from macOS `nettop` without inspecting domains, packet payloads, or connection contents.
+- AI quota integration queries remaining subscription percentages via the bundled read-only **CodexBar CLI v0.56.5** without reading chat transcripts, importing browser cookies, or scanning billing history.
 
-## What's New in 2.6.0
+## What's New in 2.7.0
 
-- Added the Codex AI Usage page and menu summary with remaining quota and reset times.
-- Added shared, visibility-aware quota refresh, bounded subprocess execution, and clear unavailable/stale/login states.
-- Bundled a checksum-pinned CodexBar helper and dependency licenses, with offline regression tests.
-- Rewrote both READMEs around current features, setup, and safety boundaries; removed the accumulated historical changelog.
+- **Modern Minimalist macOS Redesign**: Rebuilt the entire dashboard and menu bar popover with a calm monochrome + single system blue accent palette, merged the left sidebar into a single unified navigation list, and unified process rankings into a crisp native table layout.
+- **Local Proxy & TUN Penetration in Process Traffic**: Captures real client apps routing through `127.0.0.1` proxies and `utun` interfaces, automatically strips duplicate forwarding totals from proxy daemons (Quantumult X, Surge, Clash, Mihomo, sing-box, etc.) with a one-click filter toggle, resolves parent `.app` bundles/icons for `Helper` processes, and cuts initial sampling latency to ~0.32s.
+- **Antigravity Subscription Quota Support**: Upgraded AI Usage and the menu bar summary to support both **Codex** and **Antigravity**, displaying 5-hour and 7-day quota windows across Gemini and Claude/GPT model pools.
+- **Streamlined Read-Only Architecture**: Removed legacy storage cleanup and app uninstallation tools to keep the app 100% read-only and lightweight.
 
 Older release notes remain in [GitHub Releases](https://github.com/svsvnm/MacResourceMonitor/releases).
 
 ## Build and Test
 
-Requires Xcode 26 Command Line Tools or Xcode 26 with a macOS 26 SDK. The build script invokes Swift directly; no Xcode project or package-manager setup is needed.
+Requires Xcode 26 Command Line Tools or Xcode 26 with a macOS 26 SDK:
 
 ```zsh
 git clone https://github.com/svsvnm/MacResourceMonitor.git
@@ -100,27 +82,23 @@ cd MacResourceMonitor
 open "Mac资源监控.app"
 ```
 
-The first build downloads the pinned arm64 CodexBar archive and verifies its SHA-256. Later builds reuse the verified cache. The app bundle includes helper resources and third-party licenses.
-
-Run the same checks used by GitHub Actions:
+Run the full CI verification suite (metadata validation, strict Swift typecheck, multi-provider quota unit tests, fresh bundle build, and code signature checks):
 
 ```zsh
 ./Scripts/ci-check.sh
 ```
 
-Checks cover version consistency, Swift warnings as errors, offline quota regression tests, a fresh app build, resources, architecture, and code signatures. Release ZIPs and checksums are built by GitHub Actions from the matching version tag; generated app bundles are not committed.
-
 ## Third-Party Components
 
 - [Stats](https://github.com/exelban/stats): reference for Apple SMC access.
 - [WhatCable](https://github.com/darrylmorley/whatcable): read-only port and cable diagnostics.
-- [CodexBar](https://github.com/steipete/CodexBar): Codex subscription quota via its CLI.
+- [CodexBar](https://github.com/steipete/CodexBar): Codex and Antigravity subscription quota via its CLI.
 
 See [third-party notices](THIRD_PARTY_NOTICES.md) and [CodexBar dependency licenses](Assets/CodexBarLicenses) for attribution and license texts.
 
 ## Version
 
-- App version: 2.6.0
-- Build: 45
+- App version: 2.7.0
+- Build: 46
 - Bundle ID: `io.github.svsvnm.MacResourceMonitor`
 - Target: macOS 26.0+, arm64

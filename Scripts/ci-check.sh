@@ -41,11 +41,20 @@ grep -Fq -- "- App 版本：${app_version}" README.zh-CN.md
 grep -Fq -- "- Build：${build_number}" README.zh-CN.md
 
 echo "[2/6] Type-check Swift sources with warnings as errors"
+SDK_FLAGS=()
+if [[ -d "/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk" ]]; then
+  SDK_FLAGS=(-sdk "/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk")
+fi
+MODULE_CACHE_DIR="$PROJECT_DIR/.build/module-cache"
+mkdir -p "$MODULE_CACHE_DIR"
+
 xcrun swiftc \
   -swift-version 5 \
   -warnings-as-errors \
   -typecheck \
   -parse-as-library \
+  "${SDK_FLAGS[@]}" \
+  -module-cache-path "$MODULE_CACHE_DIR" \
   -target arm64-apple-macos26.0 \
   -framework SwiftUI \
   -framework AppKit \
@@ -55,13 +64,14 @@ xcrun swiftc \
   Sources/CodexQuotaMonitor.swift \
   Sources/CodexQuotaView.swift \
   Sources/ProcessNetworkMonitor.swift \
-  Sources/StorageManager.swift \
   Sources/CableMonitor.swift \
   Sources/MacResourceMonitor.swift
 
 echo "[3/6] Build a fresh application bundle"
 mkdir -p .build/tests
 xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
+  "${SDK_FLAGS[@]}" \
+  -module-cache-path "$MODULE_CACHE_DIR" \
   Sources/CodexQuotaMonitor.swift Tests/CodexQuotaTests.swift \
   -o .build/tests/codex-quota-tests
 .build/tests/codex-quota-tests

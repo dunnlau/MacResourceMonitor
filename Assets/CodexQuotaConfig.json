@@ -1,6 +1,7 @@
 {
   "version": 1,
   "providers": [
-    { "id": "codex", "enabled": true, "source": "cli", "cookieSource": "off" }
+    { "id": "codex", "enabled": true, "source": "cli", "cookieSource": "off" },
+    { "id": "antigravity", "enabled": true }
   ]
 }

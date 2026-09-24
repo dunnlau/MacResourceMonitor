@@ -2,7 +2,42 @@ import Foundation
 import Combine
 import Darwin
 
-struct CodexQuotaWindow: Decodable, Equatable, Sendable {
+enum AIUsageProvider: String, CaseIterable, Identifiable, Codable, Sendable {
+    case codex = "codex"
+    case antigravity = "antigravity"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .codex: return "Codex"
+        case .antigravity: return "Antigravity"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .codex: return "bolt.shield"
+        case .antigravity: return "atom"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .codex: return "Codex 订阅额度"
+        case .antigravity: return "Antigravity 配额与模型用量"
+        }
+    }
+
+    var defaultSource: String {
+        switch self {
+        case .codex: return "cli"
+        case .antigravity: return "auto"
+        }
+    }
+}
+
+struct AIUsageWindow: Decodable, Equatable, Sendable {
     let usedPercent: Double?
     let windowMinutes: Int?
     let resetsAt: Date?
@@ -21,26 +56,90 @@ struct CodexQuotaWindow: Decodable, Equatable, Sendable {
     }
 }
 
-struct CodexQuotaSnapshot: Equatable, Sendable {
-    let primary: CodexQuotaWindow?
-    let secondary: CodexQuotaWindow?
-    let plan: String?
-    let updatedAt: Date
+typealias CodexQuotaWindow = AIUsageWindow
+
+struct AIUsageNamedWindow: Equatable, Sendable, Identifiable {
+    let id: String
+    let title: String
+    let window: AIUsageWindow
 }
 
-enum CodexQuotaError: Error, Equatable, LocalizedError {
-    case missingHelper, loginRequired, unavailable, timedOut, invalidResponse
+struct AIUsageSnapshot: Equatable, Sendable {
+    let provider: AIUsageProvider
+    let primary: AIUsageWindow?
+    let secondary: AIUsageWindow?
+    let extraWindows: [AIUsageNamedWindow]
+    let plan: String?
+    let accountEmail: String?
+    let updatedAt: Date
+
+    init(
+        provider: AIUsageProvider = .codex,
+        primary: AIUsageWindow?,
+        secondary: AIUsageWindow?,
+        extraWindows: [AIUsageNamedWindow] = [],
+        plan: String?,
+        accountEmail: String? = nil,
+        updatedAt: Date
+    ) {
+        self.provider = provider
+        self.primary = primary
+        self.secondary = secondary
+        self.extraWindows = extraWindows
+        self.plan = plan
+        self.accountEmail = accountEmail
+        self.updatedAt = updatedAt
+    }
+
+    func extraWindow(matching idSubstring: String) -> AIUsageWindow? {
+        extraWindows.first { $0.id.localizedCaseInsensitiveContains(idSubstring) }?.window
+    }
+}
+
+typealias CodexQuotaSnapshot = AIUsageSnapshot
+
+enum AIUsageError: Error, Equatable, LocalizedError {
+    case missingHelper
+    case loginRequired(AIUsageProvider)
+    case notRunning(AIUsageProvider)
+    case unavailable(AIUsageProvider)
+    case timedOut(AIUsageProvider)
+    case invalidResponse(AIUsageProvider)
+
+    static var loginRequired: AIUsageError { .loginRequired(.codex) }
+    static var unavailable: AIUsageError { .unavailable(.codex) }
+    static var timedOut: AIUsageError { .timedOut(.codex) }
+    static var invalidResponse: AIUsageError { .invalidResponse(.codex) }
 
     var errorDescription: String? {
         switch self {
-        case .missingHelper: return "额度组件缺失，请重新安装应用。"
-        case .loginRequired: return "需要 Codex 登录授权。请在 Codex 中完成登录，再点击刷新。"
-        case .unavailable: return "暂时无法读取订阅额度，请检查网络及 Codex 登录状态后重试。"
-        case .timedOut: return "额度查询超时，请稍后重试。"
-        case .invalidResponse: return "当前账号未返回可识别的订阅额度。请确认使用的是订阅账号。"
+        case .missingHelper:
+            return "额度组件缺失，请重新安装应用。"
+        case .loginRequired(let provider):
+            switch provider {
+            case .codex:
+                return "需要 Codex 登录授权。请在 Codex 中完成登录，再点击刷新。"
+            case .antigravity:
+                return "需要 Antigravity 登录授权。请在 Antigravity 中完成登录，再点击刷新。"
+            }
+        case .notRunning(let provider):
+            switch provider {
+            case .antigravity:
+                return "未检测到 Antigravity 运行。请启动 Antigravity IDE 或运行 agy。"
+            case .codex:
+                return "未检测到 Codex 运行环境。"
+            }
+        case .unavailable(let provider):
+            return "暂时无法读取 \(provider.displayName) 订阅额度，请检查网络及登录状态后重试。"
+        case .timedOut(let provider):
+            return "\(provider.displayName) 额度查询超时，请稍后重试。"
+        case .invalidResponse(let provider):
+            return "当前账号未返回可识别的 \(provider.displayName) 订阅额度。"
         }
     }
 }
+
+typealias CodexQuotaError = AIUsageError
 
 enum CodexQuotaParser {
     private struct Payload: Decodable {
@@ -48,15 +147,30 @@ enum CodexQuotaParser {
         let usage: Usage?
         let error: Failure?
     }
+    private struct ExtraRateWindowPayload: Decodable {
+        let id: String?
+        let title: String?
+        let window: AIUsageWindow?
+    }
     private struct Usage: Decodable {
-        let primary: CodexQuotaWindow?
-        let secondary: CodexQuotaWindow?
+        let primary: AIUsageWindow?
+        let secondary: AIUsageWindow?
+        let extraRateWindows: [ExtraRateWindowPayload]?
+        let accountEmail: String?
+        let loginMethod: String?
         let identity: Identity?
     }
-    private struct Identity: Decodable { let loginMethod: String? }
+    private struct Identity: Decodable {
+        let loginMethod: String?
+        let accountEmail: String?
+    }
     private struct Failure: Decodable { let message: String? }
 
-    static func parse(_ data: Data, receivedAt: Date = Date()) throws -> CodexQuotaSnapshot {
+    static func parse(
+        _ data: Data,
+        expectedProvider: AIUsageProvider = .codex,
+        receivedAt: Date = Date()
+    ) throws -> AIUsageSnapshot {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let value = try decoder.singleValueContainer().decode(String.self)
@@ -64,37 +178,68 @@ enum CodexQuotaParser {
             formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             if let date = formatter.date(from: value) { return date }
             formatter.formatOptions = [.withInternetDateTime]
-            guard let date = formatter.date(from: value) else { throw CodexQuotaError.invalidResponse }
+            guard let date = formatter.date(from: value) else {
+                throw CodexQuotaError.invalidResponse(expectedProvider)
+            }
             return date
         }
         let payloads: [Payload]
         do { payloads = try decoder.decode([Payload].self, from: data) }
-        catch { throw CodexQuotaError.invalidResponse }
-        guard let payload = payloads.first(where: { $0.provider == "codex" }) else {
-            throw CodexQuotaError.invalidResponse
+        catch { throw CodexQuotaError.invalidResponse(expectedProvider) }
+        guard let payload = payloads.first(where: { $0.provider == expectedProvider.rawValue }) else {
+            throw CodexQuotaError.invalidResponse(expectedProvider)
         }
         if let failure = payload.error {
-            // Never publish raw helper errors, which may contain account or credential details.
             let message = (failure.message ?? "").lowercased()
+            if message.contains("not detected") || message.contains("language server") || message.contains("launch") {
+                throw CodexQuotaError.notRunning(expectedProvider)
+            }
             if ["login", "sign in", "sign-in", "unauthorized", "credential", "auth", "401"]
-                .contains(where: message.contains) { throw CodexQuotaError.loginRequired }
-            throw CodexQuotaError.unavailable
+                .contains(where: message.contains) {
+                throw CodexQuotaError.loginRequired(expectedProvider)
+            }
+            throw CodexQuotaError.unavailable(expectedProvider)
         }
         guard let usage = payload.usage,
               usage.primary?.remainingPercent != nil || usage.secondary?.remainingPercent != nil else {
-            throw CodexQuotaError.invalidResponse
+            throw CodexQuotaError.invalidResponse(expectedProvider)
         }
-        return CodexQuotaSnapshot(
-            primary: usage.primary, secondary: usage.secondary,
-            plan: usage.identity?.loginMethod, updatedAt: receivedAt
+        let extraWindows: [AIUsageNamedWindow] = (usage.extraRateWindows ?? []).compactMap { item in
+            guard let window = item.window, window.remainingPercent != nil else { return nil }
+            let id = item.id ?? item.title ?? UUID().uuidString
+            let title = item.title ?? window.periodTitle
+            return AIUsageNamedWindow(id: id, title: title, window: window)
+        }
+        let rawPlan = usage.identity?.loginMethod ?? usage.loginMethod
+        let normalizedPlan: String? = {
+            guard let rawPlan = rawPlan?.trimmingCharacters(in: .whitespacesAndNewlines), !rawPlan.isEmpty else {
+                return nil
+            }
+            if rawPlan.lowercased() == "plus" { return "ChatGPT Plus" }
+            if rawPlan.lowercased() == "pro" { return "ChatGPT Pro" }
+            return rawPlan
+        }()
+        let email = usage.accountEmail ?? usage.identity?.accountEmail
+        return AIUsageSnapshot(
+            provider: expectedProvider,
+            primary: usage.primary,
+            secondary: usage.secondary,
+            extraWindows: extraWindows,
+            plan: normalizedPlan,
+            accountEmail: email,
+            updatedAt: receivedAt
         )
     }
 }
 
 /// A bounded subprocess reader dedicated to the optional quota helper. No shell, no unbounded pipe waits.
 enum CodexQuotaProcess {
-    static func run(executable: URL, arguments: [String], environment: [String: String],
-                    timeout: TimeInterval = 25) throws -> Data {
+    static func run(
+        executable: URL,
+        arguments: [String],
+        environment: [String: String],
+        timeout: TimeInterval = 25
+    ) throws -> Data {
         let process = Process()
         let output = Pipe()
         let errors = Pipe()
@@ -123,14 +268,14 @@ enum CodexQuotaProcess {
         var totalRead = 0
         repeat {
             try Task.checkCancellation()
-            guard ProcessInfo.processInfo.systemUptime < deadline else { throw CodexQuotaError.timedOut }
+            guard ProcessInfo.processInfo.systemUptime < deadline else { throw CodexQuotaError.timedOut(.codex) }
             for fd in [stdout, stderr] {
                 var buffer = [UInt8](repeating: 0, count: 8192)
                 while true {
                     let count = Darwin.read(fd, &buffer, buffer.count)
                     guard count > 0 else { break }
                     totalRead += count
-                    guard totalRead <= 2_000_000 else { throw CodexQuotaError.invalidResponse }
+                    guard totalRead <= 2_000_000 else { throw CodexQuotaError.invalidResponse(.codex) }
                     if fd == stdout { data.append(contentsOf: buffer.prefix(count)) }
                 }
             }
@@ -141,14 +286,14 @@ enum CodexQuotaProcess {
                     let count = Darwin.read(stdout, &buffer, buffer.count)
                     guard count > 0 else { break }
                     totalRead += count
-                    guard totalRead <= 2_000_000 else { throw CodexQuotaError.invalidResponse }
+                    guard totalRead <= 2_000_000 else { throw CodexQuotaError.invalidResponse(.codex) }
                     data.append(contentsOf: buffer.prefix(count))
                 }
                 break
             }
             Thread.sleep(forTimeInterval: 0.05)
         } while true
-        guard !data.isEmpty else { throw CodexQuotaError.unavailable }
+        guard !data.isEmpty else { throw CodexQuotaError.unavailable(.codex) }
         return data
     }
 
@@ -190,25 +335,51 @@ struct CodexQuotaProvider: Sendable {
         )
     }
 
-    func fetch() async throws -> CodexQuotaSnapshot {
-        let worker = Task.detached(priority: .utility) { () throws -> CodexQuotaSnapshot in
+    func fetch(provider: AIUsageProvider = .codex) async throws -> AIUsageSnapshot {
+        let worker = Task.detached(priority: .utility) { () throws -> AIUsageSnapshot in
             guard FileManager.default.isExecutableFile(atPath: helperURL.path),
                   FileManager.default.fileExists(atPath: configURL.path) else {
                 throw CodexQuotaError.missingHelper
             }
             var environment = ProcessInfo.processInfo.environment
             let home = FileManager.default.homeDirectoryForCurrentUser.path
-            let paths = ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.local/bin",
-                         "/Applications/ChatGPT.app/Contents/Resources",
-                         "/Applications/Codex.app/Contents/Resources", "/usr/bin", "/bin"]
+            let paths = [
+                "/usr/sbin",
+                "/opt/homebrew/bin",
+                "/usr/local/bin",
+                "\(home)/.local/bin",
+                "/Applications/ChatGPT.app/Contents/Resources",
+                "/Applications/Codex.app/Contents/Resources",
+                "/usr/bin",
+                "/bin"
+            ]
             environment["PATH"] = paths.joined(separator: ":") + ":" + (environment["PATH"] ?? "")
             environment["CODEXBAR_CONFIG"] = configURL.path
-            let data = try CodexQuotaProcess.run(
-                executable: helperURL,
-                arguments: ["usage", "--provider", "codex", "--source", "cli", "--format", "json", "--json-only"],
-                environment: environment
-            )
-            return try CodexQuotaParser.parse(data)
+            var arguments = [
+                "usage",
+                "--provider", provider.rawValue,
+                "--format", "json",
+                "--json-only"
+            ]
+            if provider == .codex {
+                arguments.append(contentsOf: ["--source", "cli"])
+            } else if provider == .antigravity {
+                arguments.append(contentsOf: ["--source", "auto"])
+            }
+            let data: Data
+            do {
+                data = try CodexQuotaProcess.run(
+                    executable: helperURL,
+                    arguments: arguments,
+                    environment: environment
+                )
+            } catch let error as CodexQuotaError {
+                if case .timedOut = error {
+                    throw CodexQuotaError.timedOut(provider)
+                }
+                throw error
+            }
+            return try CodexQuotaParser.parse(data, expectedProvider: provider)
         }
         return try await withTaskCancellationHandler {
             try await worker.value
@@ -220,7 +391,7 @@ struct CodexQuotaProvider: Sendable {
 
 enum CodexQuotaConsumer: Hashable { case dashboard, menuBar }
 
-struct CodexQuotaState {
+struct CodexQuotaState: Equatable {
     var snapshot: CodexQuotaSnapshot?
     var isRefreshing = false
     var error: CodexQuotaError?
@@ -228,83 +399,151 @@ struct CodexQuotaState {
 
 @MainActor
 final class CodexQuotaMonitor: ObservableObject {
-    @Published private(set) var state = CodexQuotaState()
+    @Published var selectedProvider: AIUsageProvider = .codex {
+        didSet {
+            if selectedProvider != oldValue, !consumers.isEmpty {
+                refreshCurrent(force: false)
+            }
+        }
+    }
+
+    @Published private(set) var states: [AIUsageProvider: CodexQuotaState] = [
+        .codex: CodexQuotaState(),
+        .antigravity: CodexQuotaState()
+    ]
+
+    var state: CodexQuotaState {
+        states[selectedProvider] ?? CodexQuotaState()
+    }
+
+    func state(for provider: AIUsageProvider) -> CodexQuotaState {
+        states[provider] ?? CodexQuotaState()
+    }
+
     private var consumers: Set<CodexQuotaConsumer> = []
-    private var refreshTask: Task<Void, Never>?
-    private var scheduledTask: Task<Void, Never>?
-    private var generation: UInt64 = 0
-    private var lastAttempt: TimeInterval?
-    private let fetch: @Sendable () async throws -> CodexQuotaSnapshot
+    private var refreshTasks: [AIUsageProvider: Task<Void, Never>] = [:]
+    private var scheduledTasks: [AIUsageProvider: Task<Void, Never>] = [:]
+    private var generations: [AIUsageProvider: UInt64] = [.codex: 0, .antigravity: 0]
+    private var lastAttempts: [AIUsageProvider: TimeInterval] = [:]
+    private let fetchProvider: @Sendable (AIUsageProvider) async throws -> AIUsageSnapshot
     private let interval: @Sendable () -> TimeInterval
 
-    init(fetch: @escaping @Sendable () async throws -> CodexQuotaSnapshot = { try await CodexQuotaProvider.bundled.fetch() },
-         interval: @escaping @Sendable () -> TimeInterval = {
-             let info = ProcessInfo.processInfo
-             return info.isLowPowerModeEnabled || info.thermalState == .serious || info.thermalState == .critical ? 300 : 60
-         }) {
-        self.fetch = fetch
+    init(
+        fetchProvider: @escaping @Sendable (AIUsageProvider) async throws -> AIUsageSnapshot = { provider in
+            try await CodexQuotaProvider.bundled.fetch(provider: provider)
+        },
+        interval: @escaping @Sendable () -> TimeInterval = {
+            let info = ProcessInfo.processInfo
+            return info.isLowPowerModeEnabled || info.thermalState == .serious || info.thermalState == .critical ? 300 : 60
+        }
+    ) {
+        self.fetchProvider = fetchProvider
         self.interval = interval
     }
 
-    deinit { refreshTask?.cancel(); scheduledTask?.cancel() }
+    convenience init(
+        fetch: @escaping @Sendable () async throws -> AIUsageSnapshot,
+        interval: @escaping @Sendable () -> TimeInterval = { 60 }
+    ) {
+        self.init(fetchProvider: { _ in try await fetch() }, interval: interval)
+    }
+
+    deinit {
+        for (_, task) in refreshTasks { task.cancel() }
+        for (_, task) in scheduledTasks { task.cancel() }
+    }
 
     func setActive(_ active: Bool, for consumer: CodexQuotaConsumer) {
         if active { consumers.insert(consumer) } else { consumers.remove(consumer) }
         if consumers.isEmpty {
-            generation &+= 1
-            refreshTask?.cancel()
-            refreshTask = nil
-            scheduledTask?.cancel()
-            scheduledTask = nil
-            if state.isRefreshing {
-                lastAttempt = nil
-                var next = state
-                next.isRefreshing = false
-                state = next
+            for provider in AIUsageProvider.allCases {
+                generations[provider, default: 0] &+= 1
+                refreshTasks[provider]?.cancel()
+                refreshTasks[provider] = nil
+                scheduledTasks[provider]?.cancel()
+                scheduledTasks[provider] = nil
+                if states[provider]?.isRefreshing == true {
+                    lastAttempts[provider] = nil
+                    var next = states[provider] ?? CodexQuotaState()
+                    next.isRefreshing = false
+                    states[provider] = next
+                }
             }
         } else {
-            refresh()
+            refreshCurrent()
         }
     }
 
     func refresh(force: Bool = false) {
-        guard !consumers.isEmpty, !state.isRefreshing else { return }
+        refreshCurrent(force: force)
+    }
+
+    func refreshCurrent(force: Bool = false) {
+        refresh(provider: selectedProvider, force: force)
+    }
+
+    func refresh(provider: AIUsageProvider, force: Bool = false) {
+        guard !consumers.isEmpty else { return }
+        let currentState = states[provider] ?? CodexQuotaState()
+        guard !currentState.isRefreshing else { return }
+
         let now = ProcessInfo.processInfo.systemUptime
-        let remaining = interval() - (now - (lastAttempt ?? -1_000_000))
-        if !force, remaining > 0 { schedule(after: remaining); return }
-        scheduledTask?.cancel()
-        lastAttempt = now
-        generation &+= 1
-        let token = generation
-        var next = state
-        next.isRefreshing = true
-        state = next
-        let fetch = self.fetch
-        refreshTask = Task { [weak self] in
-            let result: Result<CodexQuotaSnapshot, Error>
-            do { result = .success(try await fetch()) } catch { result = .failure(error) }
-            guard !Task.isCancelled, let self, self.generation == token, !self.consumers.isEmpty else { return }
-            var next = self.state
+        let remaining = interval() - (now - (lastAttempts[provider] ?? -1_000_000))
+        if !force, remaining > 0 {
+            schedule(provider: provider, after: remaining)
+            return
+        }
+
+        scheduledTasks[provider]?.cancel()
+        lastAttempts[provider] = now
+        generations[provider, default: 0] &+= 1
+        let token = generations[provider, default: 0]
+
+        var pending = currentState
+        pending.isRefreshing = true
+        states[provider] = pending
+
+        let fetch = self.fetchProvider
+        refreshTasks[provider] = Task { [weak self] in
+            let result: Result<AIUsageSnapshot, Error>
+            do {
+                result = .success(try await fetch(provider))
+            } catch {
+                result = .failure(error)
+            }
+
+            guard !Task.isCancelled,
+                  let self,
+                  self.generations[provider] == token,
+                  !self.consumers.isEmpty else { return }
+
+            var next = self.states[provider] ?? CodexQuotaState()
             next.isRefreshing = false
             switch result {
-            case let .success(snapshot): next.snapshot = snapshot; next.error = nil
+            case let .success(snapshot):
+                next.snapshot = snapshot
+                next.error = nil
             case let .failure(error):
-                next.error = error as? CodexQuotaError ?? .unavailable
-                if next.error == .loginRequired { next.snapshot = nil }
+                let classified = error as? CodexQuotaError ?? .unavailable(provider)
+                next.error = classified
+                if case .loginRequired = classified {
+                    next.snapshot = nil
+                }
             }
-            self.state = next
-            self.refreshTask = nil
-            self.schedule(after: self.interval())
+            self.states[provider] = next
+            self.refreshTasks[provider] = nil
+            self.schedule(provider: provider, after: self.interval())
         }
     }
 
-    private func schedule(after delay: TimeInterval) {
-        scheduledTask?.cancel()
-        scheduledTask = Task { [weak self] in
-            do { try await Task.sleep(nanoseconds: UInt64(max(0.05, delay) * 1_000_000_000)) }
-            catch { return }
+    private func schedule(provider: AIUsageProvider, after delay: TimeInterval) {
+        scheduledTasks[provider]?.cancel()
+        scheduledTasks[provider] = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: UInt64(max(0.05, delay) * 1_000_000_000))
+            } catch { return }
             guard !Task.isCancelled else { return }
-            self?.refresh()
+            self?.refresh(provider: provider)
         }
     }
 }

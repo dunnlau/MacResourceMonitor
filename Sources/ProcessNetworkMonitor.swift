@@ -6,10 +6,35 @@ import Darwin
 struct ProcessTrafficRow: Identifiable, Equatable {
     let pid: Int32
     let name: String
+    let subtitle: String?
+    let bundlePath: String?
+    let isProxyTunnel: Bool
     let downloadBytesPerSecond: Double
     let uploadBytesPerSecond: Double
     let sessionDownloadedBytes: UInt64
     let sessionUploadedBytes: UInt64
+
+    init(
+        pid: Int32,
+        name: String,
+        subtitle: String? = nil,
+        bundlePath: String? = nil,
+        isProxyTunnel: Bool = false,
+        downloadBytesPerSecond: Double,
+        uploadBytesPerSecond: Double,
+        sessionDownloadedBytes: UInt64,
+        sessionUploadedBytes: UInt64
+    ) {
+        self.pid = pid
+        self.name = name
+        self.subtitle = subtitle
+        self.bundlePath = bundlePath
+        self.isProxyTunnel = isProxyTunnel
+        self.downloadBytesPerSecond = downloadBytesPerSecond
+        self.uploadBytesPerSecond = uploadBytesPerSecond
+        self.sessionDownloadedBytes = sessionDownloadedBytes
+        self.sessionUploadedBytes = sessionUploadedBytes
+    }
 
     var id: Int32 { pid }
     var currentBytesPerSecond: Double { downloadBytesPerSecond + uploadBytesPerSecond }
@@ -18,10 +43,15 @@ struct ProcessTrafficRow: Identifiable, Equatable {
 
 struct ProcessTrafficDisplayState {
     var rows: [ProcessTrafficRow] = []
+    var allRows: [ProcessTrafficRow] = []
     var downloadBytesPerSecond = 0.0
     var uploadBytesPerSecond = 0.0
     var sessionDownloadedBytes: UInt64 = 0
     var sessionUploadedBytes: UInt64 = 0
+    var proxyTunnelDownloadBytesPerSecond = 0.0
+    var proxyTunnelUploadBytesPerSecond = 0.0
+    var proxyTunnelSessionBytes: UInt64 = 0
+    var proxyTunnelNames: [String] = []
     var lastUpdatedAt: Date?
     var errorText: String?
     var isCollecting = false
@@ -30,6 +60,9 @@ struct ProcessTrafficDisplayState {
 private struct ProcessTrafficSnapshot {
     let pid: Int32
     let name: String
+    let subtitle: String?
+    let bundlePath: String?
+    let isProxyTunnel: Bool
     let processStartedAt: UInt64?
     let downloadedBytes: UInt64
     let uploadedBytes: UInt64
@@ -46,12 +79,29 @@ enum ProcessTrafficConsumer: Hashable {
 }
 
 private enum ProcessTrafficCollector {
+    private static let proxyKeywords: [String] = [
+        "quantumult",
+        "surge",
+        "clash",
+        "mihomo",
+        "sing-box",
+        "v2ray",
+        "xray",
+        "privoxy",
+        "tun2socks",
+        "shadowsocks",
+        "loon",
+        "stash",
+        "wireguard",
+        "tailscaled",
+        "nesessionmanager"
+    ]
+
     static func collect() -> ProcessTrafficCollectionResult {
         guard let result = CommandRunner.run(
             "/usr/bin/nettop",
             arguments: [
                 "-P", "-n", "-x", "-c",
-                "-t", "external",
                 "-L", "1",
                 "-J", "bytes_in,bytes_out"
             ],
@@ -93,9 +143,13 @@ private enum ProcessTrafficCollector {
                   let downloaded = UInt64(fields[1]),
                   let uploaded = UInt64(fields[2]) else { continue }
 
+            let metadata = resolveProcessMetadata(pid: identity.pid, fallback: identity.name)
             rows.append(ProcessTrafficSnapshot(
                 pid: identity.pid,
-                name: resolvedProcessName(pid: identity.pid, fallback: identity.name),
+                name: metadata.displayName,
+                subtitle: metadata.subtitle,
+                bundlePath: metadata.bundlePath,
+                isProxyTunnel: metadata.isProxyTunnel,
                 processStartedAt: processStartIdentifier(pid: identity.pid),
                 downloadedBytes: downloaded,
                 uploadedBytes: uploaded
@@ -112,12 +166,67 @@ private enum ProcessTrafficCollector {
         return (name.isEmpty ? "未知进程" : name, pid)
     }
 
-    private static func resolvedProcessName(pid: Int32, fallback: String) -> String {
+    private static func resolveProcessMetadata(
+        pid: Int32,
+        fallback: String
+    ) -> (displayName: String, subtitle: String?, bundlePath: String?, isProxyTunnel: Bool) {
+        let fullPath = processExecutablePath(pid: pid)
+        let leafName = fullPath.map { URL(fileURLWithPath: $0).lastPathComponent }
+            ?? shortProcessName(pid: pid)
+            ?? fallback
+
+        var topAppBundlePath: String?
+        var topAppName: String?
+        var isAppExtension = false
+
+        if let fullPath {
+            if fullPath.contains(".appex/") {
+                isAppExtension = true
+            }
+            let components = fullPath.split(separator: "/", omittingEmptySubsequences: false)
+            var currentPath = ""
+            for component in components {
+                if component.isEmpty { continue }
+                currentPath += "/\(component)"
+                if component.hasSuffix(".app"), topAppBundlePath == nil {
+                    topAppBundlePath = currentPath
+                    topAppName = String(component.dropLast(4))
+                }
+            }
+        }
+
+        let combinedLower = "\(leafName) \(topAppName ?? "") \(fullPath ?? "")".lowercased()
+        let isTunnel = isAppExtension && (combinedLower.contains("tunnel") || combinedLower.contains("packet") || combinedLower.contains("vpn"))
+            || proxyKeywords.contains { combinedLower.contains($0) }
+
+        if let topAppName, !topAppName.isEmpty {
+            if isTunnel {
+                let tunnelTitle = leafName.localizedCaseInsensitiveContains(topAppName) ? leafName : "\(topAppName) (\(leafName))"
+                return (tunnelTitle, "代理 / TUN 隧道守护进程", topAppBundlePath, true)
+            }
+            if leafName != topAppName {
+                return (topAppName, leafName, topAppBundlePath, false)
+            }
+            return (topAppName, nil, topAppBundlePath, false)
+        }
+
+        return (leafName, isTunnel ? "代理 / TUN 转发服务" : nil, nil, isTunnel)
+    }
+
+    private static func processExecutablePath(pid: Int32) -> String? {
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN) * 4)
+        let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        guard length > 0 else { return nil }
+        let path = String(cString: buffer).trimmingCharacters(in: .whitespacesAndNewlines)
+        return path.isEmpty ? nil : path
+    }
+
+    private static func shortProcessName(pid: Int32) -> String? {
         var buffer = [CChar](repeating: 0, count: 1024)
         let length = proc_name(pid, &buffer, UInt32(buffer.count))
-        guard length > 0 else { return fallback }
+        guard length > 0 else { return nil }
         let name = String(cString: buffer).trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? fallback : name
+        return name.isEmpty ? nil : name
     }
 
     private static func processStartIdentifier(pid: Int32) -> UInt64? {
@@ -158,10 +267,19 @@ private enum ProcessTrafficCollector {
 }
 
 final class ProcessNetworkMonitor: ObservableObject {
-    private static let dashboardRefreshInterval: TimeInterval = 2
-    private static let menuBarRefreshInterval: TimeInterval = 2
+    private static let dashboardRefreshInterval: TimeInterval = 1.6
+    private static let menuBarRefreshInterval: TimeInterval = 1.8
+    private static let coldStartFastInterval: TimeInterval = 0.32
+    private static let reusableBaselineMaxAge: TimeInterval = 15.0
 
     @Published private(set) var displayState = ProcessTrafficDisplayState()
+    @Published var filterProxyTunnels: Bool = true {
+        didSet {
+            if filterProxyTunnels != oldValue {
+                rebuildDisplayRows()
+            }
+        }
+    }
 
     var rows: [ProcessTrafficRow] { displayState.rows }
     var downloadBytesPerSecond: Double { displayState.downloadBytesPerSecond }
@@ -174,6 +292,9 @@ final class ProcessNetworkMonitor: ObservableObject {
 
     private struct SessionEntry {
         var name: String
+        var subtitle: String?
+        var bundlePath: String?
+        var isProxyTunnel: Bool
         var processStartedAt: UInt64?
         var downloadedBytes: UInt64
         var uploadedBytes: UInt64
@@ -182,17 +303,21 @@ final class ProcessNetworkMonitor: ObservableObject {
 
     private struct CumulativeCounter {
         var name: String
+        var subtitle: String?
+        var bundlePath: String?
+        var isProxyTunnel: Bool
         var processStartedAt: UInt64?
         var downloadedBytes: UInt64
         var uploadedBytes: UInt64
     }
 
-    private let queue = DispatchQueue(label: "local.mac-resource-monitor.process-network", qos: .utility)
+    private let queue = DispatchQueue(label: "local.mac-resource-monitor.process-network", qos: .userInitiated)
     private var sessionEntries: [Int32: SessionEntry] = [:]
     private var retiredSessionDownloadedBytes: UInt64 = 0
     private var retiredSessionUploadedBytes: UInt64 = 0
     private var previousCounters: [Int32: CumulativeCounter] = [:]
     private var previousSnapshotAt: Date?
+    private var latestLiveRates: [Int32: (download: Double, upload: Double)] = [:]
     private var activeConsumers: Set<ProcessTrafficConsumer> = []
     private var collectionScheduled = false
     private var collectionGeneration: UInt64 = 0
@@ -215,13 +340,12 @@ final class ProcessNetworkMonitor: ObservableObject {
             if !wasCollecting {
                 var next = displayState
                 next.errorText = nil
-                next.isCollecting = next.lastUpdatedAt == nil
+                next.isCollecting = true
                 displayState = next
             }
             scheduleCollection()
         } else {
-            previousCounters.removeAll()
-            previousSnapshotAt = nil
+            // Keep previousCounters & previousSnapshotAt in memory so re-entering the view is instant!
             clearLiveRates()
         }
     }
@@ -233,15 +357,9 @@ final class ProcessNetworkMonitor: ObservableObject {
         retiredSessionUploadedBytes = 0
         previousCounters.removeAll()
         previousSnapshotAt = nil
+        latestLiveRates.removeAll()
 
-        var next = displayState
-        next.rows = []
-        next.downloadBytesPerSecond = 0
-        next.uploadBytesPerSecond = 0
-        next.sessionDownloadedBytes = 0
-        next.sessionUploadedBytes = 0
-        next.lastUpdatedAt = nil
-        next.errorText = nil
+        var next = ProcessTrafficDisplayState()
         next.isCollecting = !activeConsumers.isEmpty
         displayState = next
 
@@ -254,6 +372,10 @@ final class ProcessNetworkMonitor: ObservableObject {
         guard !activeConsumers.isEmpty, !collectionScheduled else { return }
         collectionScheduled = true
         let generation = collectionGeneration
+        let hadRecentBaseline: Bool = {
+            guard let prev = previousSnapshotAt else { return false }
+            return Date().timeIntervalSince(prev) <= Self.reusableBaselineMaxAge
+        }()
 
         queue.async { [weak self] in
             let result = ProcessTrafficCollector.collect()
@@ -276,9 +398,15 @@ final class ProcessNetworkMonitor: ObservableObject {
                 }
 
                 self.apply(result)
-                let refreshInterval = self.activeConsumers.contains(.dashboard)
-                    ? Self.dashboardRefreshInterval
-                    : Self.menuBarRefreshInterval
+                // If we just captured a fresh baseline (or resumed after >15s), follow up in 0.32s for instant rates!
+                let refreshInterval: TimeInterval
+                if !hadRecentBaseline {
+                    refreshInterval = Self.coldStartFastInterval
+                } else if self.activeConsumers.contains(.dashboard) {
+                    refreshInterval = Self.dashboardRefreshInterval
+                } else {
+                    refreshInterval = Self.menuBarRefreshInterval
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + refreshInterval) { [weak self] in
                     guard let self,
                           generation == self.collectionGeneration,
@@ -290,21 +418,27 @@ final class ProcessNetworkMonitor: ObservableObject {
     }
 
     private func clearLiveRates() {
+        latestLiveRates.removeAll()
         var next = displayState
         next.downloadBytesPerSecond = 0
         next.uploadBytesPerSecond = 0
-        next.lastUpdatedAt = nil
+        next.proxyTunnelDownloadBytesPerSecond = 0
+        next.proxyTunnelUploadBytesPerSecond = 0
         next.isCollecting = false
-        next.rows = next.rows.map {
+        next.allRows = next.allRows.map {
             ProcessTrafficRow(
                 pid: $0.pid,
                 name: $0.name,
+                subtitle: $0.subtitle,
+                bundlePath: $0.bundlePath,
+                isProxyTunnel: $0.isProxyTunnel,
                 downloadBytesPerSecond: 0,
                 uploadBytesPerSecond: 0,
                 sessionDownloadedBytes: $0.sessionDownloadedBytes,
                 sessionUploadedBytes: $0.sessionUploadedBytes
             )
         }
+        next.rows = filterProxyTunnels ? next.allRows.filter { !$0.isProxyTunnel } : next.allRows
         displayState = next
     }
 
@@ -353,16 +487,6 @@ final class ProcessNetworkMonitor: ObservableObject {
         switch result {
         case let .failure(message):
             var next = displayState
-            next.rows = next.rows.map { row in
-                ProcessTrafficRow(
-                    pid: row.pid,
-                    name: row.name,
-                    downloadBytesPerSecond: 0,
-                    uploadBytesPerSecond: 0,
-                    sessionDownloadedBytes: row.sessionDownloadedBytes,
-                    sessionUploadedBytes: row.sessionUploadedBytes
-                )
-            }
             next.downloadBytesPerSecond = 0
             next.uploadBytesPerSecond = 0
             next.errorText = message
@@ -377,6 +501,9 @@ final class ProcessNetworkMonitor: ObservableObject {
                         snapshot.pid,
                         CumulativeCounter(
                             name: snapshot.name,
+                            subtitle: snapshot.subtitle,
+                            bundlePath: snapshot.bundlePath,
+                            isProxyTunnel: snapshot.isProxyTunnel,
                             processStartedAt: snapshot.processStartedAt,
                             downloadedBytes: snapshot.downloadedBytes,
                             uploadedBytes: snapshot.uploadedBytes
@@ -386,7 +513,8 @@ final class ProcessNetworkMonitor: ObservableObject {
                 uniquingKeysWith: { _, latest in latest }
             )
 
-            guard let previousSnapshotAt else {
+            guard let previousSnapshotAt,
+                  now.timeIntervalSince(previousSnapshotAt) <= Self.reusableBaselineMaxAge else {
                 previousCounters = currentCounters
                 self.previousSnapshotAt = now
                 var next = displayState
@@ -411,12 +539,15 @@ final class ProcessNetworkMonitor: ObservableObject {
                     : 0
                 let current = sessionEntries[pid]
                 let continuesSession = Self.isSameProcess(current, counter)
-                if let current, !continuesSession {
+                if let current, !continuesSession, !current.isProxyTunnel {
                     retiredSessionDownloadedBytes += current.downloadedBytes
                     retiredSessionUploadedBytes += current.uploadedBytes
                 }
                 sessionEntries[pid] = SessionEntry(
                     name: counter.name,
+                    subtitle: counter.subtitle,
+                    bundlePath: counter.bundlePath,
+                    isProxyTunnel: counter.isProxyTunnel,
                     processStartedAt: counter.processStartedAt,
                     downloadedBytes: (continuesSession ? current?.downloadedBytes ?? 0 : 0) + downloadedDelta,
                     uploadedBytes: (continuesSession ? current?.uploadedBytes ?? 0 : 0) + uploadedDelta,
@@ -430,11 +561,12 @@ final class ProcessNetworkMonitor: ObservableObject {
 
             previousCounters = currentCounters
             self.previousSnapshotAt = now
+            self.latestLiveRates = liveRates
 
             let expiredEntries = sessionEntries.filter { pid, entry in
                 !activePIDs.contains(pid) && now.timeIntervalSince(entry.lastSeen) >= 120
             }
-            for entry in expiredEntries.values {
+            for entry in expiredEntries.values where !entry.isProxyTunnel {
                 retiredSessionDownloadedBytes += entry.downloadedBytes
                 retiredSessionUploadedBytes += entry.uploadedBytes
             }
@@ -442,38 +574,58 @@ final class ProcessNetworkMonitor: ObservableObject {
                 activePIDs.contains(pid) || now.timeIntervalSince(entry.lastSeen) < 120
             }
 
-            let nextRows = sessionEntries.map { pid, entry in
-                let rate = liveRates[pid] ?? (0, 0)
-                return ProcessTrafficRow(
-                    pid: pid,
-                    name: entry.name,
-                    downloadBytesPerSecond: rate.download,
-                    uploadBytesPerSecond: rate.upload,
-                    sessionDownloadedBytes: entry.downloadedBytes,
-                    sessionUploadedBytes: entry.uploadedBytes
-                )
-            }
-            .sorted {
-                if $0.currentBytesPerSecond != $1.currentBytesPerSecond {
-                    return $0.currentBytesPerSecond > $1.currentBytesPerSecond
-                }
-                return $0.sessionBytes > $1.sessionBytes
-            }
-            .prefix(100)
-
-            var next = displayState
-            next.rows = Array(nextRows)
-            next.downloadBytesPerSecond = liveRates.values.reduce(0) { $0 + $1.download }
-            next.uploadBytesPerSecond = liveRates.values.reduce(0) { $0 + $1.upload }
-            next.sessionDownloadedBytes = retiredSessionDownloadedBytes
-                + sessionEntries.values.reduce(0) { $0 + $1.downloadedBytes }
-            next.sessionUploadedBytes = retiredSessionUploadedBytes
-                + sessionEntries.values.reduce(0) { $0 + $1.uploadedBytes }
-            next.lastUpdatedAt = now
-            next.errorText = nil
-            next.isCollecting = false
-            displayState = next
+            rebuildDisplayRows(at: now)
         }
+    }
+
+    private func rebuildDisplayRows(at timestamp: Date? = nil) {
+        let allRows = sessionEntries.map { pid, entry in
+            let rate = latestLiveRates[pid] ?? (0, 0)
+            return ProcessTrafficRow(
+                pid: pid,
+                name: entry.name,
+                subtitle: entry.subtitle,
+                bundlePath: entry.bundlePath,
+                isProxyTunnel: entry.isProxyTunnel,
+                downloadBytesPerSecond: rate.download,
+                uploadBytesPerSecond: rate.upload,
+                sessionDownloadedBytes: entry.downloadedBytes,
+                sessionUploadedBytes: entry.uploadedBytes
+            )
+        }
+        .sorted {
+            if $0.currentBytesPerSecond != $1.currentBytesPerSecond {
+                return $0.currentBytesPerSecond > $1.currentBytesPerSecond
+            }
+            return $0.sessionBytes > $1.sessionBytes
+        }
+
+        let visibleRows = filterProxyTunnels
+            ? allRows.filter { !$0.isProxyTunnel }
+            : allRows
+
+        let tunnelRows = allRows.filter(\.isProxyTunnel)
+        let appRows = allRows.filter { !$0.isProxyTunnel }
+
+        var next = displayState
+        next.allRows = Array(allRows.prefix(120))
+        next.rows = Array(visibleRows.prefix(100))
+        next.downloadBytesPerSecond = appRows.reduce(0) { $0 + $1.downloadBytesPerSecond }
+        next.uploadBytesPerSecond = appRows.reduce(0) { $0 + $1.uploadBytesPerSecond }
+        next.sessionDownloadedBytes = retiredSessionDownloadedBytes
+            + appRows.reduce(0) { $0 + $1.sessionDownloadedBytes }
+        next.sessionUploadedBytes = retiredSessionUploadedBytes
+            + appRows.reduce(0) { $0 + $1.sessionUploadedBytes }
+        next.proxyTunnelDownloadBytesPerSecond = tunnelRows.reduce(0) { $0 + $1.downloadBytesPerSecond }
+        next.proxyTunnelUploadBytesPerSecond = tunnelRows.reduce(0) { $0 + $1.uploadBytesPerSecond }
+        next.proxyTunnelSessionBytes = tunnelRows.reduce(0) { $0 + $1.sessionBytes }
+        next.proxyTunnelNames = Array(Set(tunnelRows.map(\.name))).sorted()
+        if let timestamp {
+            next.lastUpdatedAt = timestamp
+        }
+        next.errorText = nil
+        next.isCollecting = false
+        displayState = next
     }
 }
 
@@ -492,15 +644,64 @@ private enum ProcessTrafficSort: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+private struct TrafficSortSegmentedControl: View {
+    @Binding var selection: ProcessTrafficSort
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(ProcessTrafficSort.allCases) { option in
+                let isSelected = selection == option
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        selection = option
+                    }
+                } label: {
+                    Text(option.rawValue)
+                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                        .padding(.horizontal, 10)
+                        .frame(height: 26)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(
+                                    isSelected
+                                        ? (colorScheme == .dark ? Color.white.opacity(0.14) : Color.white)
+                                        : Color.clear
+                                )
+                                .shadow(
+                                    color: isSelected ? Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08) : .clear,
+                                    radius: 2,
+                                    y: 1
+                                )
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.07 : 0.055))
+        )
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
 struct ProcessTrafficView: View {
     @ObservedObject var model: ProcessNetworkMonitor
     @State private var searchText = ""
     @State private var sort: ProcessTrafficSort = .current
+    @Environment(\.colorScheme) private var colorScheme
 
     private var visibleRows: [ProcessTrafficRow] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         let filtered = model.rows.filter { row in
-            query.isEmpty || row.name.localizedCaseInsensitiveContains(query) || String(row.pid).contains(query)
+            query.isEmpty
+                || row.name.localizedCaseInsensitiveContains(query)
+                || (row.subtitle?.localizedCaseInsensitiveContains(query) == true)
+                || String(row.pid).contains(query)
         }
         return filtered.sorted { lhs, rhs in
             switch sort {
@@ -513,247 +714,340 @@ struct ProcessTrafficView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            sectionLabel("流量概览", subtitle: "外部网络接口 · 约每 2 秒更新")
-
+        VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 summaryCard(
-                    title: "当前下载",
+                    title: "实时应用下载",
                     value: processTrafficRate(model.downloadBytesPerSecond),
-                    detail: "所有进程合计",
-                    symbol: "arrow.down",
-                    color: InterfacePalette.download
+                    detail: "已剥离代理隧道二次汇总",
+                    symbol: "arrow.down"
                 )
                 summaryCard(
-                    title: "当前上传",
+                    title: "实时应用上传",
                     value: processTrafficRate(model.uploadBytesPerSecond),
-                    detail: "所有进程合计",
-                    symbol: "arrow.up",
-                    color: InterfacePalette.upload
+                    detail: "已剥离代理隧道二次汇总",
+                    symbol: "arrow.up"
                 )
                 summaryCard(
                     title: "本次监控累计",
                     value: processTrafficBytes(model.sessionDownloadedBytes + model.sessionUploadedBytes),
                     detail: "↓ \(processTrafficBytes(model.sessionDownloadedBytes)) · ↑ \(processTrafficBytes(model.sessionUploadedBytes))",
-                    symbol: "sum",
-                    color: InterfacePalette.memorySeries
+                    symbol: "sum"
                 )
             }
 
-            sectionLabel("进程排行", subtitle: "显示最近活跃和本次监控产生流量的进程")
-
-            HStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    TextField("搜索进程名或 PID", text: $searchText)
-                        .textFieldStyle(.plain)
-                }
-                .padding(.horizontal, 13)
-                .frame(height: 36)
-                .background(
-                    Color.primary.opacity(0.045),
-                    in: RoundedRectangle(
-                        cornerRadius: InterfaceMetrics.controlRadius,
-                        style: .continuous
-                    )
-                )
-
-                Picker("排序", selection: $sort) {
-                    ForEach(ProcessTrafficSort.allCases) { option in
-                        Text(option.rawValue).tag(option)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 360)
+            if !model.displayState.proxyTunnelNames.isEmpty {
+                proxyTunnelBanner
             }
-            .padding(14)
-            .liquidGlassPanel(
-                cornerRadius: InterfaceMetrics.panelRadius
-            )
+
+            toolbarPanel
 
             if let error = model.errorText {
-                statusCard(symbol: "exclamationmark.triangle.fill", title: "暂时无法读取进程流量", detail: error, color: .orange)
+                statusCard(symbol: "exclamationmark.triangle", title: "暂时无法读取进程流量", detail: error)
             } else if model.lastUpdatedAt == nil {
-                statusCard(symbol: "network", title: "正在建立进程流量基线", detail: "首次结果大约需要 2 秒", color: .blue)
+                statusCard(symbol: "network", title: "正在采样进程流量", detail: "首次差分采样中（约 0.3 秒）…")
             } else if visibleRows.isEmpty {
-                statusCard(symbol: "checkmark.circle.fill", title: "当前没有匹配的进程流量", detail: "尝试清除搜索条件或产生一些网络活动", color: .green)
+                statusCard(symbol: "checkmark.circle", title: "暂无匹配的进程流量", detail: "尝试清除搜索词或产生一些网络请求")
             } else {
                 processTable
             }
 
-            Label(
-                "页面或菜单可见时只读调用 macOS nettop；不查看通信内容，不记录域名，不接管连接，并排除本机回环流量。累计值仅统计界面可见期间，手动清零后重新计算。",
-                systemImage: "lock.shield"
-            )
-            .font(InterfaceTypography.caption)
-            .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                Text("支持穿透 127.0.0.1 本地系统代理与 utun 虚拟网卡，自动剥离代理守护进程的重复转发流量。")
+                    .font(InterfaceTypography.microMetadata)
+                    .foregroundStyle(.tertiary)
+            }
             .padding(.horizontal, 4)
+            .padding(.top, 2)
         }
         .onAppear { model.setActive(true, for: .dashboard) }
         .onDisappear { model.setActive(false, for: .dashboard) }
     }
 
-    private var processTable: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 12) {
-                Text("进程").frame(maxWidth: .infinity, alignment: .leading)
-                Text("下载").frame(width: 112, alignment: .trailing)
-                Text("上传").frame(width: 112, alignment: .trailing)
-                Text("本次累计").frame(width: 112, alignment: .trailing)
-            }
-            .font(InterfaceTypography.captionEmphasized)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 16)
-
-            LazyVStack(spacing: 8) {
-                ForEach(Array(visibleRows.prefix(80).enumerated()), id: \.element.id) { index, row in
-                    processRow(row, rank: index + 1)
-                }
-            }
-        }
-    }
-
-    private func processRow(_ row: ProcessTrafficRow, rank: Int) -> some View {
-        HStack(spacing: 12) {
-            Text("\(rank)")
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(.tertiary)
-                .frame(width: 22, alignment: .trailing)
-
-            processIcon(pid: row.pid, name: row.name)
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 7) {
-                    Text(row.name)
-                        .font(InterfaceTypography.bodyEmphasized)
-                        .lineLimit(1)
-                    Text("PID \(row.pid)")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                }
-                GeometryReader { proxy in
-                    let total = max(1, model.rows.first?.currentBytesPerSecond ?? 1)
-                    Capsule()
-                        .fill(Color.primary.opacity(0.055))
-                        .overlay(alignment: .leading) {
-                            Capsule()
-                                .fill(InterfacePalette.download.opacity(0.72))
-                                .frame(width: proxy.size.width * min(1, row.currentBytesPerSecond / total))
-                        }
-                }
-                .frame(height: 4)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.down")
-                    .foregroundStyle(InterfacePalette.download)
-                Text(processTrafficRate(row.downloadBytesPerSecond))
-            }
-            .frame(width: 112, alignment: .trailing)
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.up")
-                    .foregroundStyle(InterfacePalette.upload)
-                Text(processTrafficRate(row.uploadBytesPerSecond))
-            }
-            .frame(width: 112, alignment: .trailing)
-            Text(processTrafficBytes(row.sessionBytes))
-                .foregroundStyle(.secondary)
-                .frame(width: 112, alignment: .trailing)
-        }
-        .font(.system(size: 13, weight: .medium, design: .rounded))
-        .monospacedDigit()
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .stableListCard(cornerRadius: InterfaceMetrics.cardRadius)
-    }
-
-    @ViewBuilder
-    private func processIcon(pid: Int32, name: String) -> some View {
-        if let icon = NSRunningApplication(processIdentifier: pid_t(pid))?.icon {
-            Image(nsImage: icon)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 30, height: 30)
-        } else {
-            RoundedRectangle(
-                cornerRadius: InterfaceMetrics.controlRadius,
-                style: .continuous
-            )
-            .fill(InterfacePalette.iconSurface)
-                .overlay {
-                    Text(String(name.prefix(1)).uppercased())
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
-                .frame(width: 30, height: 30)
-        }
-    }
-
-    private func summaryCard(title: String, value: String, detail: String, symbol: String, color: Color) -> some View {
-        HStack(spacing: 13) {
-            RoundedRectangle(
-                cornerRadius: InterfaceMetrics.controlRadius,
-                style: .continuous
-            )
-            .fill(color.opacity(0.12))
-                .overlay {
-                    Image(systemName: symbol)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(color)
-                }
-                .frame(width: 42, height: 42)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(InterfaceTypography.captionEmphasized)
+    private var toolbarPanel: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                Text(value)
-                    .font(.system(size: 19, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                Text(detail)
-                    .font(InterfaceTypography.microMetadata)
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
+                TextField("搜索应用、子进程或 PID…", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            Spacer(minLength: 0)
+            .padding(.horizontal, 10)
+            .frame(height: 32)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.045))
+            )
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    model.filterProxyTunnels.toggle()
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: model.filterProxyTunnels ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 12, weight: .medium))
+                    Text(model.filterProxyTunnels ? "已剥离 TUN 代理" : "显示全部进程")
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(model.filterProxyTunnels ? Color.primary : Color.secondary)
+                .padding(.horizontal, 11)
+                .frame(height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.primary.opacity(model.filterProxyTunnels ? (colorScheme == .dark ? 0.11 : 0.08) : 0.04))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(InterfacePalette.cardStroke, lineWidth: 0.6)
+                )
+            }
+            .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
+
+            TrafficSortSegmentedControl(selection: $sort)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 88)
+    }
+
+    private var proxyTunnelBanner: some View {
+        let names = model.displayState.proxyTunnelNames.joined(separator: " / ")
+        let down = processTrafficRate(model.displayState.proxyTunnelDownloadBytesPerSecond)
+        let up = processTrafficRate(model.displayState.proxyTunnelUploadBytesPerSecond)
+        let totalSession = processTrafficBytes(model.displayState.proxyTunnelSessionBytes)
+
+        return HStack(spacing: 10) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+            HStack(spacing: 6) {
+                Text("代理隧道：\(names)")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.primary)
+                Text("·")
+                    .foregroundStyle(.tertiary)
+                Text("总转发 ↓ \(down)  ↑ \(up)  累计 \(totalSession)")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            .lineLimit(1)
+
+            Spacer()
+
+            Text(model.filterProxyTunnels ? "已从列表剥离" : "已包含在列表中")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.primary.opacity(0.06), in: Capsule())
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
         .stableDashboardCard()
     }
 
-    private func statusCard(symbol: String, title: String, detail: String, color: Color) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: symbol)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(color)
+    private var processTable: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Text("#")
+                    .frame(width: 24, alignment: .trailing)
+                Text("应用与进程")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("下载")
+                    .frame(width: 104, alignment: .trailing)
+                Text("上传")
+                    .frame(width: 104, alignment: .trailing)
+                Text("累计流量")
+                    .frame(width: 100, alignment: .trailing)
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color.primary.opacity(0.02))
+
+            Divider().opacity(0.5)
+
+            LazyVStack(spacing: 0) {
+                let rows = Array(visibleRows.prefix(80))
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                    processRow(row, rank: index + 1)
+                    if index < rows.count - 1 {
+                        Divider()
+                            .opacity(0.35)
+                            .padding(.leading, 52)
+                    }
+                }
+            }
+        }
+        .stableDashboardCard()
+    }
+
+    private func processRow(_ row: ProcessTrafficRow, rank: Int) -> some View {
+        let maxRate = max(1, visibleRows.first?.currentBytesPerSecond ?? 1)
+        let ratio = min(1, max(0, row.currentBytesPerSecond / maxRate))
+        let isActiveDown = row.downloadBytesPerSecond >= 1
+        let isActiveUp = row.uploadBytesPerSecond >= 1
+
+        return HStack(spacing: 12) {
+            Text("\(rank)")
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(.tertiary)
+                .frame(width: 24, alignment: .trailing)
+
+            processIcon(row: row)
+
             VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: 13, weight: .semibold))
+                HStack(spacing: 6) {
+                    Text(row.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    if let subtitle = row.subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                            .lineLimit(1)
+                    }
+
+                    if row.isProxyTunnel {
+                        Text("TUN")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    }
+
+                    Text("PID \(row.pid)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                }
+
+                GeometryReader { proxy in
+                    Capsule()
+                        .fill(Color.primary.opacity(0.05))
+                        .overlay(alignment: .leading) {
+                            if ratio > 0 {
+                                Capsule()
+                                    .fill(InterfacePalette.accent.opacity(0.65))
+                                    .frame(width: max(3, proxy.size.width * ratio))
+                            }
+                        }
+                }
+                .frame(height: 3)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(processTrafficRate(row.downloadBytesPerSecond))
+                .font(.system(size: 12, weight: isActiveDown ? .semibold : .regular, design: .monospaced))
+                .foregroundStyle(isActiveDown ? .primary : .tertiary)
+                .frame(width: 104, alignment: .trailing)
+
+            Text(processTrafficRate(row.uploadBytesPerSecond))
+                .font(.system(size: 12, weight: isActiveUp ? .medium : .regular, design: .monospaced))
+                .foregroundStyle(isActiveUp ? .primary : .tertiary)
+                .frame(width: 104, alignment: .trailing)
+
+            Text(processTrafficBytes(row.sessionBytes))
+                .font(.system(size: 12, weight: .regular, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 100, alignment: .trailing)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private func processIcon(row: ProcessTrafficRow) -> some View {
+        if let icon = NSRunningApplication(processIdentifier: pid_t(row.pid))?.icon {
+            Image(nsImage: icon)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 24, height: 24)
+        } else if let bundlePath = row.bundlePath {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: bundlePath))
+                .resizable()
+                .scaledToFit()
+                .frame(width: 24, height: 24)
+        } else {
+            RoundedRectangle(
+                cornerRadius: 6,
+                style: .continuous
+            )
+            .fill(Color.primary.opacity(0.06))
+            .overlay {
+                Text(String(row.name.prefix(1)).uppercased())
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 24, height: 24)
+        }
+    }
+
+    private func summaryCard(title: String, value: String, detail: String, symbol: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.tertiary)
+            }
+            Text(value)
+                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Text(detail)
+                .font(InterfaceTypography.microMetadata)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .stableDashboardCard()
+    }
+
+    private func statusCard(symbol: String, title: String, detail: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.system(size: 13, weight: .medium))
                 Text(detail).font(InterfaceTypography.caption).foregroundStyle(.secondary)
             }
             Spacer()
             if model.isCollecting { ProgressView().controlSize(.small) }
         }
         .padding(18)
-        .stableListCard(cornerRadius: InterfaceMetrics.cardRadius)
-    }
-
-    private func sectionLabel(_ title: String, subtitle: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(title)
-                .font(.system(size: 14, weight: .bold, design: .rounded))
-            Text(subtitle)
-                .font(InterfaceTypography.caption)
-                .foregroundStyle(.secondary)
-            Spacer()
-            if let date = model.lastUpdatedAt {
-                Text("更新于 \(date.formatted(date: .omitted, time: .standard))")
-                    .font(InterfaceTypography.microMetadata)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding(.horizontal, 4)
+        .stableDashboardCard()
     }
 }
 
