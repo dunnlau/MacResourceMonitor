@@ -659,7 +659,7 @@ private struct TrafficSortSegmentedControl: View {
                 } label: {
                     Text(option.rawValue)
                         .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                        .foregroundStyle(isSelected ? Color.primary : InterfacePalette.textSecondary)
                         .padding(.horizontal, 10)
                         .frame(height: 26)
                         .background(
@@ -755,10 +755,10 @@ struct ProcessTrafficView: View {
             HStack(spacing: 6) {
                 Image(systemName: "shield.lefthalf.filled")
                     .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(InterfacePalette.textTertiary)
                 Text("支持穿透 127.0.0.1 本地系统代理与 utun 虚拟网卡，自动剥离代理守护进程的重复转发流量。")
                     .font(InterfaceTypography.microMetadata)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(InterfacePalette.textTertiary)
             }
             .padding(.horizontal, 4)
             .padding(.top, 2)
@@ -772,7 +772,7 @@ struct ProcessTrafficView: View {
             HStack(spacing: 7) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(InterfacePalette.textSecondary)
                 TextField("搜索应用、子进程或 PID…", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
@@ -782,7 +782,7 @@ struct ProcessTrafficView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 12))
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(InterfacePalette.textTertiary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -807,7 +807,7 @@ struct ProcessTrafficView: View {
                         .font(.system(size: 12, weight: .medium))
                         .lineLimit(1)
                 }
-                .foregroundStyle(model.filterProxyTunnels ? Color.primary : Color.secondary)
+                .foregroundStyle(model.filterProxyTunnels ? Color.primary : InterfacePalette.textSecondary)
                 .padding(.horizontal, 11)
                 .frame(height: 32)
                 .background(
@@ -835,7 +835,7 @@ struct ProcessTrafficView: View {
         return HStack(spacing: 10) {
             Image(systemName: "arrow.triangle.branch")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(InterfacePalette.textSecondary)
                 .frame(width: 24, height: 24)
                 .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
 
@@ -844,10 +844,10 @@ struct ProcessTrafficView: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.primary)
                 Text("·")
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(InterfacePalette.textTertiary)
                 Text("总转发 ↓ \(down)  ↑ \(up)  累计 \(totalSession)")
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(InterfacePalette.textSecondary)
             }
             .lineLimit(1)
 
@@ -855,7 +855,7 @@ struct ProcessTrafficView: View {
 
             Text(model.filterProxyTunnels ? "已从列表剥离" : "已包含在列表中")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(InterfacePalette.textSecondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(Color.primary.opacity(0.06), in: Capsule())
@@ -880,7 +880,7 @@ struct ProcessTrafficView: View {
                     .frame(width: 100, alignment: .trailing)
             }
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(InterfacePalette.textTertiary)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .background(Color.primary.opacity(0.02))
@@ -911,7 +911,7 @@ struct ProcessTrafficView: View {
         return HStack(spacing: 12) {
             Text("\(rank)")
                 .font(.system(size: 11, weight: .regular, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(InterfacePalette.textTertiary)
                 .frame(width: 24, alignment: .trailing)
 
             processIcon(row: row)
@@ -926,7 +926,7 @@ struct ProcessTrafficView: View {
                     if let subtitle = row.subtitle {
                         Text(subtitle)
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(InterfacePalette.textSecondary)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1)
                             .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
@@ -936,7 +936,7 @@ struct ProcessTrafficView: View {
                     if row.isProxyTunnel {
                         Text("TUN")
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(InterfacePalette.textSecondary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
                             .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
@@ -944,7 +944,7 @@ struct ProcessTrafficView: View {
 
                     Text("PID \(row.pid)")
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(InterfacePalette.textTertiary)
                 }
 
                 GeometryReader { proxy in
@@ -974,7 +974,7 @@ struct ProcessTrafficView: View {
 
             Text(processTrafficBytes(row.sessionBytes))
                 .font(.system(size: 12, weight: .regular, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(InterfacePalette.textSecondary)
                 .frame(width: 100, alignment: .trailing)
         }
         .padding(.horizontal, 16)
@@ -1002,7 +1002,7 @@ struct ProcessTrafficView: View {
             .overlay {
                 Text(String(row.name.prefix(1)).uppercased())
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(InterfacePalette.textSecondary)
             }
             .frame(width: 24, height: 24)
         }
@@ -1013,11 +1013,11 @@ struct ProcessTrafficView: View {
             HStack {
                 Text(title)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(InterfacePalette.textSecondary)
                 Spacer()
                 Image(systemName: symbol)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(InterfacePalette.textTertiary)
             }
             Text(value)
                 .font(.system(size: 22, weight: .semibold, design: .rounded))
@@ -1026,7 +1026,7 @@ struct ProcessTrafficView: View {
                 .lineLimit(1)
             Text(detail)
                 .font(InterfaceTypography.microMetadata)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(InterfacePalette.textTertiary)
                 .lineLimit(1)
         }
         .padding(16)
@@ -1038,10 +1038,10 @@ struct ProcessTrafficView: View {
         HStack(spacing: 12) {
             Image(systemName: symbol)
                 .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(InterfacePalette.textSecondary)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.system(size: 13, weight: .medium))
-                Text(detail).font(InterfaceTypography.caption).foregroundStyle(.secondary)
+                Text(detail).font(InterfaceTypography.caption).foregroundStyle(InterfacePalette.textSecondary)
             }
             Spacer()
             if model.isCollecting { ProgressView().controlSize(.small) }

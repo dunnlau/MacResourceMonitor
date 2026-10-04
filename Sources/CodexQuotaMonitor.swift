@@ -348,7 +348,9 @@ struct CodexQuotaProvider: Sendable {
                 "/opt/homebrew/bin",
                 "/usr/local/bin",
                 "\(home)/.local/bin",
+                "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin",
                 "/Applications/ChatGPT.app/Contents/Resources",
+                "\(home)/.codex/plugins/.plugin-appserver/codex-cli/bin",
                 "/Applications/Codex.app/Contents/Resources",
                 "/usr/bin",
                 "/bin"

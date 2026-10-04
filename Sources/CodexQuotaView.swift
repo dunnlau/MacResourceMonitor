@@ -22,7 +22,7 @@ struct AIProviderSegmentedControl: View {
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
                     }
-                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                    .foregroundStyle(isSelected ? Color.primary : InterfacePalette.textSecondary)
                     .padding(.horizontal, 11)
                     .frame(height: 26)
                     .background(
@@ -41,6 +41,8 @@ struct AIProviderSegmentedControl: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(provider.displayName)
+                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             }
         }
         .padding(3)
@@ -49,6 +51,80 @@ struct AIProviderSegmentedControl: View {
                 .fill(Color.primary.opacity(colorScheme == .dark ? 0.07 : 0.055))
         )
         .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
+/// 圆环额度指示：百分比与“剩余”放在环内，Codex 与 Antigravity 卡片共用。
+struct QuotaRing: View {
+    let window: CodexQuotaWindow?
+    let tint: Color
+    var size: CGFloat = 120
+    var lineWidth: CGFloat = 11
+    var isLoading = false
+
+    var body: some View {
+        let remaining = min(100, max(0, window?.remainingPercent ?? 0))
+        let hasValue = window?.remainingPercent != nil
+        ZStack {
+            Circle()
+                .stroke(Color.primary.opacity(0.07), lineWidth: lineWidth)
+            if hasValue {
+                Circle()
+                    .trim(from: 0, to: remaining / 100)
+                    .stroke(
+                        AngularGradient(
+                            colors: [tint.opacity(0.45), tint],
+                            center: .center,
+                            startAngle: .degrees(0),
+                            endAngle: .degrees(360 * max(remaining, 1) / 100)
+                        ),
+                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .shadow(color: tint.opacity(0.28), radius: lineWidth * 0.5)
+                    .animation(.easeOut(duration: 0.6), value: remaining)
+            }
+            VStack(spacing: 1) {
+                Text(isLoading ? "88%" : (hasValue ? String(format: "%.0f%%", remaining) : "--"))
+                    .font(.system(size: size * 0.27, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+                    .contentTransition(.numericText())
+                    .animation(.easeOut(duration: 0.4), value: window?.remainingPercent)
+                    .foregroundStyle(hasValue ? tint : InterfacePalette.textSecondary)
+                    .redacted(reason: isLoading ? .placeholder : [])
+                Text("剩余")
+                    .font(.system(size: max(9, size * 0.095), weight: .medium))
+                    .foregroundStyle(InterfacePalette.textTertiary)
+            }
+        }
+        .frame(width: size, height: size)
+        .padding(lineWidth / 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("剩余额度")
+        .accessibilityValue(hasValue ? String(format: "%.0f%%", remaining) : "未知")
+    }
+}
+
+/// 菜单栏面板里的迷你圆环（仅图形，数值由旁边的文字给出）。
+private struct MiniQuotaRing: View {
+    let window: CodexQuotaWindow?
+
+    var body: some View {
+        let remaining = min(100, max(0, window?.remainingPercent ?? 0))
+        let color: Color = remaining <= 10 ? InterfacePalette.temperature : (remaining <= 25 ? .orange : InterfacePalette.accent.opacity(0.9))
+        ZStack {
+            Circle().stroke(Color.primary.opacity(0.1), lineWidth: 3)
+            if window?.remainingPercent != nil {
+                Circle()
+                    .trim(from: 0, to: remaining / 100)
+                    .stroke(color, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+        }
+        .frame(width: 16, height: 16)
+        .accessibilityHidden(true)
     }
 }
 
@@ -64,7 +140,7 @@ struct CodexQuotaView: View {
                         .foregroundStyle(.orange)
                     Text(error.localizedDescription)
                         .font(InterfaceTypography.captionMedium)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(InterfacePalette.textSecondary)
                     Spacer()
                     Button("重试") {
                         model.refreshCurrent(force: true)
@@ -128,7 +204,7 @@ struct CodexQuotaView: View {
             HStack(spacing: 10) {
                 Image(systemName: symbol)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(InterfacePalette.textSecondary)
                     .frame(width: 30, height: 30)
                     .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
@@ -137,7 +213,7 @@ struct CodexQuotaView: View {
                         .font(.system(size: 15, weight: .semibold))
                     Text(subtitle)
                         .font(InterfaceTypography.microMetadata)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(InterfacePalette.textTertiary)
                 }
 
                 Spacer()
@@ -145,7 +221,7 @@ struct CodexQuotaView: View {
                 if let plan = model.state.snapshot?.plan {
                     Text(plan)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(InterfacePalette.textSecondary)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(Color.primary.opacity(0.06), in: Capsule())
@@ -154,87 +230,52 @@ struct CodexQuotaView: View {
 
             Divider().opacity(0.45)
 
-            quotaTierBlock(
-                badgeTitle: "5 小时短时限额",
-                window: shortWindow,
-                isPrimaryHero: false
-            )
-
-            Divider().opacity(0.45)
-
-            quotaTierBlock(
-                badgeTitle: "7 天每周限额",
-                window: weeklyWindow,
-                isPrimaryHero: true
-            )
+            HStack(alignment: .top, spacing: 0) {
+                quotaRingTier(badgeTitle: "5 小时短时限额", window: shortWindow)
+                Divider().opacity(0.45).frame(height: 150)
+                quotaRingTier(badgeTitle: "7 天每周限额", window: weeklyWindow)
+            }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(lowQuotaTint([shortWindow, weeklyWindow]))
         .stableDashboardCard()
         .transaction { $0.animation = nil }
     }
 
-    private func quotaTierBlock(
-        badgeTitle: String,
-        window: CodexQuotaWindow?,
-        isPrimaryHero: Bool
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .center) {
+    private func quotaRingTier(badgeTitle: String, window: CodexQuotaWindow?) -> some View {
+        VStack(spacing: 10) {
+            QuotaRing(
+                window: window,
+                tint: statusColor(for: window, defaultColor: InterfacePalette.accent.opacity(0.9)),
+                size: 104,
+                lineWidth: 10,
+                isLoading: isLoading(window)
+            )
+
+            VStack(spacing: 3) {
                 Text(badgeTitle)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
+                    .font(.system(size: 12, weight: .semibold))
                 if let remaining = window?.remainingPercent {
-                    let used = max(0, 100 - remaining)
-                    Text(String(format: "已用 %.1f%%", used))
+                    Text(String(format: "已用 %.1f%%", max(0, 100 - remaining)))
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(InterfacePalette.textTertiary)
                 }
-            }
-
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(quotaPercent(window))
-                    .font(.system(size: isPrimaryHero ? 30 : 24, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(statusColor(for: window, defaultColor: .primary))
-                Text("剩余")
-                    .font(InterfaceTypography.caption)
-                    .foregroundStyle(.tertiary)
-            }
-
-            GeometryReader { geo in
-                let remaining = min(100, max(0, window?.remainingPercent ?? 0))
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.primary.opacity(0.06))
-                    if window?.remainingPercent != nil {
-                        Capsule()
-                            .fill(statusColor(for: window, defaultColor: InterfacePalette.accent.opacity(0.82)))
-                            .frame(width: geo.size.width * (remaining / 100))
-                    }
-                }
-            }
-            .frame(height: 5)
-
-            HStack(spacing: 5) {
                 if let reset = window?.resetsAt {
                     Text("重置于 \(reset.formatted(date: .abbreviated, time: .shortened))")
-                        .foregroundStyle(.secondary)
-                    Text("·")
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(InterfacePalette.textSecondary)
                     Text(reset > Date() ? "约 \(reset.formatted(.relative(presentation: .numeric)))" : "即将刷新")
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(InterfacePalette.textTertiary)
                 } else {
                     Text(model.state.isRefreshing ? "正在读取窗口配额…" : "暂未提供该窗口配额")
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(InterfacePalette.textTertiary)
                 }
             }
             .font(InterfaceTypography.microMetadata)
             .lineLimit(1)
+            .minimumScaleFactor(0.85)
         }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Codex Dual Window Cards
@@ -270,7 +311,7 @@ struct CodexQuotaView: View {
             HStack(spacing: 10) {
                 Image(systemName: symbol)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(InterfacePalette.textSecondary)
                     .frame(width: 30, height: 30)
                     .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
@@ -279,63 +320,47 @@ struct CodexQuotaView: View {
                         .font(.system(size: 15, weight: .semibold))
                     Text(subtitle)
                         .font(InterfaceTypography.microMetadata)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(InterfacePalette.textTertiary)
                 }
 
                 Spacer()
 
                 Text(badge)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(InterfacePalette.textSecondary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(Color.primary.opacity(0.06), in: Capsule())
             }
 
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(quotaPercent(window))
-                    .font(.system(size: 32, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(statusColor(for: window, defaultColor: .primary))
-                Text("剩余")
-                    .font(InterfaceTypography.caption)
-                    .foregroundStyle(.tertiary)
-
-                Spacer()
-
+            VStack(spacing: 10) {
+                QuotaRing(
+                    window: window,
+                    tint: statusColor(for: window, defaultColor: InterfacePalette.accent.opacity(0.9)),
+                    size: 132,
+                    lineWidth: 12,
+                    isLoading: isLoading(window)
+                )
                 if let remaining = window?.remainingPercent {
                     Text(String(format: "已用 %.0f%%", max(0, 100 - remaining)))
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(InterfacePalette.textTertiary)
                 }
             }
-
-            GeometryReader { geo in
-                let remaining = min(100, max(0, window?.remainingPercent ?? 0))
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.primary.opacity(0.06))
-                    if window?.remainingPercent != nil {
-                        Capsule()
-                            .fill(statusColor(for: window, defaultColor: InterfacePalette.accent.opacity(0.82)))
-                            .frame(width: geo.size.width * (remaining / 100))
-                    }
-                }
-            }
-            .frame(height: 5)
+            .frame(maxWidth: .infinity)
 
             Divider().opacity(0.45)
 
             HStack(spacing: 6) {
                 if let reset = window?.resetsAt {
                     Text("重置于 \(reset.formatted(date: .abbreviated, time: .shortened))")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(InterfacePalette.textSecondary)
                     Spacer()
                     Text(reset > Date() ? "约 \(reset.formatted(.relative(presentation: .numeric)))" : "已到重置时间")
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(InterfacePalette.textTertiary)
                 } else {
                     Text(model.state.isRefreshing ? "正在查询订阅额度…" : "重置时间暂不可用")
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(InterfacePalette.textTertiary)
                     Spacer()
                 }
             }
@@ -343,6 +368,7 @@ struct CodexQuotaView: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, minHeight: 200, alignment: .topLeading)
+        .background(lowQuotaTint([window]))
         .stableDashboardCard()
         .transaction { $0.animation = nil }
     }
@@ -382,7 +408,7 @@ struct CodexQuotaView: View {
                         }
                     }
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(InterfacePalette.textSecondary)
                 .padding(.top, 2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -403,7 +429,7 @@ struct CodexQuotaView: View {
                 }
             }
             .font(InterfaceTypography.microMetadata)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(InterfacePalette.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(18)
@@ -415,7 +441,7 @@ struct CodexQuotaView: View {
         HStack(spacing: 8) {
             Text(label)
                 .font(InterfaceTypography.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(InterfacePalette.textSecondary)
             Spacer(minLength: 8)
             Text(value)
                 .font(.system(size: 12, weight: .medium))
@@ -430,6 +456,19 @@ struct CodexQuotaView: View {
         }
         let prefix = model.state.error == nil ? "已同步" : "缓存"
         return "\(prefix) · \(date.formatted(date: .omitted, time: .standard))"
+    }
+
+    /// 剩余额度偏低时给整张卡片一层淡淡的警示底色。
+    private func lowQuotaTint(_ windows: [CodexQuotaWindow?]) -> Color {
+        guard let lowest = windows.compactMap({ $0?.remainingPercent }).min() else { return .clear }
+        if lowest <= 10 { return InterfacePalette.temperature.opacity(0.09) }
+        if lowest <= 25 { return Color.orange.opacity(0.07) }
+        return .clear
+    }
+
+    /// 首次加载且尚无数据时，用骨架占位代替“--”。
+    private func isLoading(_ window: CodexQuotaWindow?) -> Bool {
+        window == nil && model.state.isRefreshing && model.state.snapshot == nil
     }
 
     private func statusColor(for window: CodexQuotaWindow?, defaultColor: Color) -> Color {
@@ -455,7 +494,7 @@ struct CodexQuotaMenuSummary: View {
                             .foregroundStyle(.primary)
                         Text(model.selectedProvider.displayName)
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(InterfacePalette.textSecondary)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1)
                             .background(Color.primary.opacity(0.06), in: Capsule())
@@ -474,7 +513,7 @@ struct CodexQuotaMenuSummary: View {
                         Text(model.selectedProvider == .codex ? "切换 Antigravity" : "切换 Codex")
                             .font(.system(size: 10, weight: .medium))
                     }
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(InterfacePalette.textSecondary)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Color.primary.opacity(0.055), in: Capsule())
@@ -487,28 +526,25 @@ struct CodexQuotaMenuSummary: View {
             Button(action: openUsage) {
                 if let error = model.state.error {
                     Text(error.localizedDescription)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(InterfacePalette.textSecondary)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else if let snapshot = model.state.snapshot {
-                    HStack {
-                        if model.selectedProvider == .antigravity {
-                            let geminiWeekly = snapshot.extraWindow(matching: "gemini-weekly") ?? snapshot.primary
-                            let thirdPartyWeekly = snapshot.extraWindow(matching: "3p-weekly") ?? snapshot.secondary
-                            Text("Gemini 周剩余 \(quotaPercent(geminiWeekly))")
-                            Spacer(minLength: 4)
-                            Text("Claude/GPT 周剩余 \(quotaPercent(thirdPartyWeekly))")
-                        } else {
-                            Text("5h 剩余 \(quotaPercent(snapshot.primary))")
-                            Spacer(minLength: 4)
-                            Text("7d 剩余 \(quotaPercent(snapshot.secondary))")
-                        }
+                    let isAG = model.selectedProvider == .antigravity
+                    let left = isAG ? (snapshot.extraWindow(matching: "gemini-weekly") ?? snapshot.primary) : snapshot.primary
+                    let right = isAG ? (snapshot.extraWindow(matching: "3p-weekly") ?? snapshot.secondary) : snapshot.secondary
+                    HStack(spacing: 6) {
+                        MiniQuotaRing(window: left)
+                        Text(isAG ? "Gemini 周 \(quotaPercent(left))" : "5h \(quotaPercent(left))")
+                        Spacer(minLength: 4)
+                        Text(isAG ? "Claude/GPT 周 \(quotaPercent(right))" : "7d \(quotaPercent(right))")
+                        MiniQuotaRing(window: right)
                     }
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(InterfacePalette.textSecondary)
                 } else {
                     Text(model.state.isRefreshing ? "正在同步配额…" : "点击查看订阅配额")
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(InterfacePalette.textTertiary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
