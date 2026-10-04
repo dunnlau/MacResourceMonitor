@@ -44,6 +44,7 @@ xcrun swiftc \
   "$SCRIPT_DIR/Sources/CodexQuotaMonitor.swift" \
   "$SCRIPT_DIR/Sources/CodexQuotaView.swift" \
   "$SCRIPT_DIR/Sources/ProcessNetworkMonitor.swift" \
+  "$SCRIPT_DIR/Sources/ProcessTrafficView.swift" \
   "$SCRIPT_DIR/Sources/CableMonitor.swift" \
   "$SCRIPT_DIR/Sources/MacResourceMonitor.swift" \
   -o "$EXECUTABLE_DIR/MacResourceMonitor"

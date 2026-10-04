@@ -64,6 +64,7 @@ xcrun swiftc \
   Sources/CodexQuotaMonitor.swift \
   Sources/CodexQuotaView.swift \
   Sources/ProcessNetworkMonitor.swift \
+  Sources/ProcessTrafficView.swift \
   Sources/CableMonitor.swift \
   Sources/MacResourceMonitor.swift
 
@@ -75,6 +76,13 @@ xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
   Sources/CodexQuotaMonitor.swift Tests/CodexQuotaTests.swift \
   -o .build/tests/codex-quota-tests
 .build/tests/codex-quota-tests
+xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
+  "${SDK_FLAGS[@]}" \
+  -module-cache-path "$MODULE_CACHE_DIR" \
+  -target arm64-apple-macos26.0 \
+  Sources/CommandRunner.swift Sources/ProcessNetworkMonitor.swift Tests/MonitoringTests.swift \
+  -o .build/tests/monitoring-tests
+.build/tests/monitoring-tests
 ./build.sh >/dev/null
 
 echo "[4/6] Verify bundle structure and metadata"

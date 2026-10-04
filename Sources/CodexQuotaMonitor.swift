@@ -238,7 +238,8 @@ enum CodexQuotaProcess {
         executable: URL,
         arguments: [String],
         environment: [String: String],
-        timeout: TimeInterval = 25
+        timeout: TimeInterval = 25,
+        provider: AIUsageProvider = .codex
     ) throws -> Data {
         let process = Process()
         let output = Pipe()
@@ -268,14 +269,14 @@ enum CodexQuotaProcess {
         var totalRead = 0
         repeat {
             try Task.checkCancellation()
-            guard ProcessInfo.processInfo.systemUptime < deadline else { throw CodexQuotaError.timedOut(.codex) }
+            guard ProcessInfo.processInfo.systemUptime < deadline else { throw CodexQuotaError.timedOut(provider) }
             for fd in [stdout, stderr] {
                 var buffer = [UInt8](repeating: 0, count: 8192)
                 while true {
                     let count = Darwin.read(fd, &buffer, buffer.count)
                     guard count > 0 else { break }
                     totalRead += count
-                    guard totalRead <= 2_000_000 else { throw CodexQuotaError.invalidResponse(.codex) }
+                    guard totalRead <= 2_000_000 else { throw CodexQuotaError.invalidResponse(provider) }
                     if fd == stdout { data.append(contentsOf: buffer.prefix(count)) }
                 }
             }
@@ -286,14 +287,14 @@ enum CodexQuotaProcess {
                     let count = Darwin.read(stdout, &buffer, buffer.count)
                     guard count > 0 else { break }
                     totalRead += count
-                    guard totalRead <= 2_000_000 else { throw CodexQuotaError.invalidResponse(.codex) }
+                    guard totalRead <= 2_000_000 else { throw CodexQuotaError.invalidResponse(provider) }
                     data.append(contentsOf: buffer.prefix(count))
                 }
                 break
             }
             Thread.sleep(forTimeInterval: 0.05)
         } while true
-        guard !data.isEmpty else { throw CodexQuotaError.unavailable(.codex) }
+        guard !data.isEmpty else { throw CodexQuotaError.unavailable(provider) }
         return data
     }
 
@@ -373,7 +374,8 @@ struct CodexQuotaProvider: Sendable {
                 data = try CodexQuotaProcess.run(
                     executable: helperURL,
                     arguments: arguments,
-                    environment: environment
+                    environment: environment,
+                    provider: provider
                 )
             } catch let error as CodexQuotaError {
                 if case .timedOut = error {
@@ -403,9 +405,9 @@ struct CodexQuotaState: Equatable {
 final class CodexQuotaMonitor: ObservableObject {
     @Published var selectedProvider: AIUsageProvider = .codex {
         didSet {
-            if selectedProvider != oldValue, !consumers.isEmpty {
-                refreshCurrent(force: false)
-            }
+            guard selectedProvider != oldValue else { return }
+            deactivate(provider: oldValue)
+            if !consumers.isEmpty { refreshCurrent(force: false) }
         }
     }
 
@@ -459,20 +461,24 @@ final class CodexQuotaMonitor: ObservableObject {
         if active { consumers.insert(consumer) } else { consumers.remove(consumer) }
         if consumers.isEmpty {
             for provider in AIUsageProvider.allCases {
-                generations[provider, default: 0] &+= 1
-                refreshTasks[provider]?.cancel()
-                refreshTasks[provider] = nil
-                scheduledTasks[provider]?.cancel()
-                scheduledTasks[provider] = nil
-                if states[provider]?.isRefreshing == true {
-                    lastAttempts[provider] = nil
-                    var next = states[provider] ?? CodexQuotaState()
-                    next.isRefreshing = false
-                    states[provider] = next
-                }
+                deactivate(provider: provider)
             }
         } else {
             refreshCurrent()
+        }
+    }
+
+    private func deactivate(provider: AIUsageProvider) {
+        generations[provider, default: 0] &+= 1
+        refreshTasks[provider]?.cancel()
+        refreshTasks[provider] = nil
+        scheduledTasks[provider]?.cancel()
+        scheduledTasks[provider] = nil
+        if states[provider]?.isRefreshing == true {
+            lastAttempts[provider] = nil
+            var next = states[provider] ?? CodexQuotaState()
+            next.isRefreshing = false
+            states[provider] = next
         }
     }
 
@@ -485,7 +491,7 @@ final class CodexQuotaMonitor: ObservableObject {
     }
 
     func refresh(provider: AIUsageProvider, force: Bool = false) {
-        guard !consumers.isEmpty else { return }
+        guard !consumers.isEmpty, provider == selectedProvider else { return }
         let currentState = states[provider] ?? CodexQuotaState()
         guard !currentState.isRefreshing else { return }
 
@@ -539,6 +545,7 @@ final class CodexQuotaMonitor: ObservableObject {
     }
 
     private func schedule(provider: AIUsageProvider, after delay: TimeInterval) {
+        guard !consumers.isEmpty, provider == selectedProvider else { return }
         scheduledTasks[provider]?.cancel()
         scheduledTasks[provider] = Task { [weak self] in
             do {

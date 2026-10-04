@@ -157,6 +157,32 @@ struct CodexQuotaTests {
             }
         }.value
         expect(timedOut && ProcessInfo.processInfo.systemUptime - started < 2, "bounded termination")
+        for provider in AIUsageProvider.allCases {
+            do {
+                _ = try CodexQuotaProcess.run(
+                    executable: URL(fileURLWithPath: "/bin/sh"),
+                    arguments: ["-c", "exit 1"],
+                    environment: [:],
+                    provider: provider
+                )
+                fatalError("empty response must fail")
+            } catch {
+                expect(error as? CodexQuotaError == .unavailable(provider), "empty response uses actual provider")
+            }
+            do {
+                _ = try CodexQuotaProcess.run(
+                    executable: URL(fileURLWithPath: "/bin/sh"),
+                    arguments: ["-c", "yes x"],
+                    environment: ["PATH": "/usr/bin:/bin"],
+                    provider: provider
+                )
+                fatalError("oversized output must fail")
+            } catch {
+                expect(error as? CodexQuotaError == .invalidResponse(provider), "oversized response uses actual provider")
+            }
+        }
+        print("Provider errors: empty and oversized subprocess output passed")
+
         print("Cancellation and subprocess timeout passed")
 
         // 4. Multi-provider switching tests
@@ -187,6 +213,46 @@ struct CodexQuotaTests {
         let codexCountAfter = await multiSource.count
         expect(codexCountBefore == codexCountAfter, "switching to cached provider does not re-fetch")
         multiModel.setActive(false, for: .dashboard)
+        let counts = ProviderCounts()
+        let polling = CodexQuotaMonitor(fetchProvider: { provider in
+            await counts.record(provider)
+            return provider == .codex ? snapshot : agySnapshot
+        }, interval: { 0.08 })
+        polling.setActive(true, for: .dashboard)
+        try await waitUntil("first provider ready") { polling.state.snapshot == snapshot && !polling.state.isRefreshing }
+        polling.selectedProvider = .antigravity
+        let codexStopped = await counts.count(.codex)
+        try await waitUntil("selected provider polls repeatedly") { await counts.count(.antigravity) >= 3 }
+        let codexLater = await counts.count(.codex)
+        expect(codexLater == codexStopped, "unselected provider must stop polling")
+        expect(polling.state(for: .codex).snapshot == snapshot, "switch retains previous snapshot")
+        polling.setActive(false, for: .dashboard)
+        let agyStopped = await counts.count(.antigravity)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        let agyLater = await counts.count(.antigravity)
+        expect(agyStopped == agyLater, "hiding stops selected provider")
+
+        let cancellation = CancellationProbe()
+        let switching = CodexQuotaMonitor(fetchProvider: { provider in
+            if provider == .codex {
+                do { try await Task.sleep(nanoseconds: 5_000_000_000) }
+                catch {
+                    await cancellation.record()
+                    // Simulate a provider completing even after cancellation.
+                    return snapshot
+                }
+            }
+            return provider == .codex ? snapshot : agySnapshot
+        }, interval: { 0.08 })
+        switching.setActive(true, for: .dashboard)
+        try await Task.sleep(nanoseconds: 30_000_000)
+        switching.selectedProvider = .antigravity
+        try await waitUntil("switch cancels inflight provider") { await cancellation.cancelled }
+        try await waitUntil("replacement provider ready") { switching.state.snapshot == agySnapshot && !switching.state.isRefreshing }
+        expect(switching.state(for: .codex).snapshot == nil, "cancelled late result discarded")
+        expect(!switching.state(for: .codex).isRefreshing, "cancelled state cleared")
+        switching.setActive(false, for: .dashboard)
+        print("Provider switching: inactive polling, inflight cancellation, cache retention passed")
         print("Multi-provider: switching, independent states, cache retention passed")
     }
 
@@ -207,4 +273,16 @@ actor ControlledSource {
         return snapshot
     }
     func fail(with error: CodexQuotaError) { self.error = error }
+}
+
+
+actor ProviderCounts {
+    private var values: [AIUsageProvider: Int] = [:]
+    func record(_ provider: AIUsageProvider) { values[provider, default: 0] += 1 }
+    func count(_ provider: AIUsageProvider) -> Int { values[provider, default: 0] }
+}
+
+actor CancellationProbe {
+    private(set) var cancelled = false
+    func record() { cancelled = true }
 }
