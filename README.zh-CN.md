@@ -13,16 +13,16 @@
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111111?logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-0A84FF">
-  <img alt="Version" src="https://img.shields.io/badge/version-2.8.0-0A84FF">
+  <img alt="Version" src="https://img.shields.io/badge/version-2.8.1-0A84FF">
   <img alt="CI" src="https://github.com/dunnlau/MacResourceMonitor/actions/workflows/ci.yml/badge.svg">
 </p>
 
-> 当前版本：**2.8.0（Build 47）**
+> 当前版本：**2.8.1（Build 48）**
 
 基于 SwiftUI 的原生仪表盘与菜单栏监控，集中查看系统资源、进程流量、Codex / Antigravity 订阅额度，以及 USB-C / 雷雳端口状态。支持明暗主题，以不同指标色和清晰文字层级呈现数据。
 ## 下载与安装
 
-**[下载 MacResourceMonitor-2.8.0.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v2.8.0/MacResourceMonitor-2.8.0.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
+**[下载 MacResourceMonitor-2.8.1.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v2.8.1/MacResourceMonitor-2.8.1.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
 
 需要 **macOS 26 或更高版本，以及 Apple Silicon 芯片**。不支持 Intel Mac 和旧版 macOS。
 
@@ -35,7 +35,7 @@
 如需校验下载完整性，将同名 `.zip.sha256` 文件下载到相同目录，运行：
 
 ```zsh
-shasum -a 256 -c MacResourceMonitor-2.8.0.zip.sha256
+shasum -a 256 -c MacResourceMonitor-2.8.1.zip.sha256
 ```
 
 ## 功能概览
@@ -63,13 +63,13 @@ shasum -a 256 -c MacResourceMonitor-2.8.0.zip.sha256
 
 进程归属取决于 macOS 暴露的计数器；短连接及暂停采样期间的流量可能遗漏，过滤后的代理数据不能作为完整流量账单。温度、风扇和线缆字段取决于硬件支持。
 
-## 2.8.0 更新
+## 2.8.1 更新
 
-- 重绘明暗主题：增加卡片层次、改善次要文字对比度，为 CPU、内存、温度与上下行流量设置独立指标色。
-- 放大系统指标数值并增加彩色图标，便于快速阅读。
-- Codex 与 Antigravity 额度改用圆环展示，菜单栏增加迷你圆环与低额度颜色提示。
-- AI 平台切换按钮向辅助功能工具提供选中状态。
-- 补充 ChatGPT 内置 CLI 与本地插件 app server 的 Codex CLI 查找路径。
+- 修复子进程超时后仍等待输出管道的问题，超时清理子进程，避免采样队列阻塞。
+- 采样失败时清零实时进程速率；切换代理过滤保留错误提示，成功采样后恢复。
+- 切换 AI 平台时停止旧平台轮询并取消进行中的查询，同时保留已缓存的额度。
+- 修正 Antigravity 查询失败时误显示 Codex 名称的问题。
+- 增加超时、继承管道、流量恢复、平台切换与错误分类的回归测试。
 
 历史版本说明保留在 [GitHub Releases](https://github.com/dunnlau/MacResourceMonitor/releases)。
 
@@ -100,7 +100,7 @@ open "Mac资源监控.app"
 
 ## 版本信息
 
-- App 版本：2.8.0
-- Build：47
+- App 版本：2.8.1
+- Build：48
 - Bundle ID：`io.github.svsvnm.MacResourceMonitor`
 - 构建目标：macOS 26.0+，arm64
