@@ -520,7 +520,19 @@ struct CodexQuotaMenuSummary: View {
                 }
                 .buttonStyle(.plain)
 
-                if model.state.isRefreshing { ProgressView().controlSize(.mini) }
+                if model.state.isRefreshing {
+                    ProgressView().controlSize(.mini)
+                } else if model.state.error != nil {
+                    Button {
+                        model.refreshCurrent(force: true)
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(InterfacePalette.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("点击重试")
+                }
             }
 
             Button(action: openUsage) {

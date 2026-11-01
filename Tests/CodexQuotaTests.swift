@@ -254,6 +254,42 @@ struct CodexQuotaTests {
         switching.setActive(false, for: .dashboard)
         print("Provider switching: inactive polling, inflight cancellation, cache retention passed")
         print("Multi-provider: switching, independent states, cache retention passed")
+
+        // 5. Error recovery unthrottled test
+        let recoverSource = ControlledSource(snapshot: agySnapshot)
+        await recoverSource.fail(with: .unavailable(.antigravity))
+        let recoverModel = CodexQuotaMonitor(
+            defaultProvider: .antigravity,
+            fetchProvider: { _ in try await recoverSource.fetch() },
+            interval: { 60 }
+        )
+        recoverModel.setActive(true, for: .dashboard)
+        try await waitUntil("initial failure recorded") { recoverModel.state.error == .unavailable(.antigravity) && !recoverModel.state.isRefreshing }
+        let initialFailCount = await recoverSource.count
+        expect(initialFailCount == 1, "initial failed fetch occurred")
+
+        // Heal source: calling refresh(force: false) should immediately retry without waiting 60s
+        await recoverSource.fail(with: nil)
+        recoverModel.refresh()
+        try await waitUntil("healed fetch completed immediately") { recoverModel.state.snapshot == agySnapshot && !recoverModel.state.isRefreshing }
+        let healedCount = await recoverSource.count
+        expect(healedCount == 2, "error state must not throttle subsequent refresh")
+        recoverModel.setActive(false, for: .dashboard)
+        print("Error state unthrottled immediate retry passed")
+
+        // 6. UserDefaults persistence test
+        let suiteName = "io.github.svsvnm.MacResourceMonitor.Tests.\(UUID().uuidString)"
+        let testDefaults = UserDefaults(suiteName: suiteName)!
+        defer { testDefaults.removePersistentDomain(forName: suiteName) }
+
+        let customModel = CodexQuotaMonitor(defaultProvider: .antigravity, userDefaults: testDefaults)
+        expect(customModel.selectedProvider == .antigravity, "honors defaultProvider when user defaults empty")
+        customModel.selectedProvider = .codex
+        expect(testDefaults.string(forKey: CodexQuotaMonitor.selectedProviderDefaultsKey) == "codex", "persists selected provider")
+
+        let restoredModel = CodexQuotaMonitor(defaultProvider: .antigravity, userDefaults: testDefaults)
+        expect(restoredModel.selectedProvider == .codex, "restores previously selected provider from user defaults")
+        print("UserDefaults provider persistence passed")
     }
 
     static func tryRemaining(_ data: Data) -> Double? {
@@ -272,7 +308,7 @@ actor ControlledSource {
         if let error { throw error }
         return snapshot
     }
-    func fail(with error: CodexQuotaError) { self.error = error }
+    func fail(with error: CodexQuotaError?) { self.error = error }
 }
 
 

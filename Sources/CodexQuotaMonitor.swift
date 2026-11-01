@@ -403,9 +403,12 @@ struct CodexQuotaState: Equatable {
 
 @MainActor
 final class CodexQuotaMonitor: ObservableObject {
-    @Published var selectedProvider: AIUsageProvider = .codex {
+    static let selectedProviderDefaultsKey = "MacResourceMonitor.SelectedAIProvider"
+
+    @Published var selectedProvider: AIUsageProvider {
         didSet {
             guard selectedProvider != oldValue else { return }
+            userDefaults?.set(selectedProvider.rawValue, forKey: Self.selectedProviderDefaultsKey)
             deactivate(provider: oldValue)
             if !consumers.isEmpty { refreshCurrent(force: false) }
         }
@@ -431,25 +434,35 @@ final class CodexQuotaMonitor: ObservableObject {
     private var lastAttempts: [AIUsageProvider: TimeInterval] = [:]
     private let fetchProvider: @Sendable (AIUsageProvider) async throws -> AIUsageSnapshot
     private let interval: @Sendable () -> TimeInterval
+    private let userDefaults: UserDefaults?
 
     init(
+        defaultProvider: AIUsageProvider = .codex,
         fetchProvider: @escaping @Sendable (AIUsageProvider) async throws -> AIUsageSnapshot = { provider in
             try await CodexQuotaProvider.bundled.fetch(provider: provider)
         },
         interval: @escaping @Sendable () -> TimeInterval = {
             let info = ProcessInfo.processInfo
             return info.isLowPowerModeEnabled || info.thermalState == .serious || info.thermalState == .critical ? 300 : 60
-        }
+        },
+        userDefaults: UserDefaults? = nil
     ) {
         self.fetchProvider = fetchProvider
         self.interval = interval
+        self.userDefaults = userDefaults
+        if let stored = userDefaults?.string(forKey: Self.selectedProviderDefaultsKey),
+           let provider = AIUsageProvider(rawValue: stored) {
+            self.selectedProvider = provider
+        } else {
+            self.selectedProvider = defaultProvider
+        }
     }
 
     convenience init(
         fetch: @escaping @Sendable () async throws -> AIUsageSnapshot,
         interval: @escaping @Sendable () -> TimeInterval = { 60 }
     ) {
-        self.init(fetchProvider: { _ in try await fetch() }, interval: interval)
+        self.init(defaultProvider: .codex, fetchProvider: { _ in try await fetch() }, interval: interval, userDefaults: nil)
     }
 
     deinit {
@@ -496,8 +509,9 @@ final class CodexQuotaMonitor: ObservableObject {
         guard !currentState.isRefreshing else { return }
 
         let now = ProcessInfo.processInfo.systemUptime
+        let shouldThrottle = !force && currentState.snapshot != nil && currentState.error == nil
         let remaining = interval() - (now - (lastAttempts[provider] ?? -1_000_000))
-        if !force, remaining > 0 {
+        if shouldThrottle, remaining > 0 {
             schedule(provider: provider, after: remaining)
             return
         }

@@ -2654,7 +2654,7 @@ private struct MacResourceMonitorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var applicationDelegate
     @State private var model = MonitorModel()
     @State private var processNetworkModel = ProcessNetworkMonitor()
-    @State private var codexQuotaModel = CodexQuotaMonitor()
+    @State private var codexQuotaModel = CodexQuotaMonitor(defaultProvider: .antigravity, userDefaults: .standard)
     @State private var selectedSection: DashboardSection = .monitor
 
     var body: some Scene {
