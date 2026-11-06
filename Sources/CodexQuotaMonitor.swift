@@ -3,35 +3,30 @@ import Combine
 import Darwin
 
 enum AIUsageProvider: String, CaseIterable, Identifiable, Codable, Sendable {
-    case codex = "codex"
     case antigravity = "antigravity"
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .codex: return "Codex"
         case .antigravity: return "Antigravity"
         }
     }
 
     var symbol: String {
         switch self {
-        case .codex: return "bolt.shield"
         case .antigravity: return "atom"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .codex: return "Codex 订阅额度"
         case .antigravity: return "Antigravity 配额与模型用量"
         }
     }
 
     var defaultSource: String {
         switch self {
-        case .codex: return "cli"
         case .antigravity: return "auto"
         }
     }
@@ -74,7 +69,7 @@ struct AIUsageSnapshot: Equatable, Sendable {
     let updatedAt: Date
 
     init(
-        provider: AIUsageProvider = .codex,
+        provider: AIUsageProvider = .antigravity,
         primary: AIUsageWindow?,
         secondary: AIUsageWindow?,
         extraWindows: [AIUsageNamedWindow] = [],
@@ -100,35 +95,25 @@ typealias CodexQuotaSnapshot = AIUsageSnapshot
 
 enum AIUsageError: Error, Equatable, LocalizedError {
     case missingHelper
-    case loginRequired(AIUsageProvider)
-    case notRunning(AIUsageProvider)
-    case unavailable(AIUsageProvider)
-    case timedOut(AIUsageProvider)
-    case invalidResponse(AIUsageProvider)
+    case loginRequired(AIUsageProvider = .antigravity)
+    case notRunning(AIUsageProvider = .antigravity)
+    case unavailable(AIUsageProvider = .antigravity)
+    case timedOut(AIUsageProvider = .antigravity)
+    case invalidResponse(AIUsageProvider = .antigravity)
 
-    static var loginRequired: AIUsageError { .loginRequired(.codex) }
-    static var unavailable: AIUsageError { .unavailable(.codex) }
-    static var timedOut: AIUsageError { .timedOut(.codex) }
-    static var invalidResponse: AIUsageError { .invalidResponse(.codex) }
+    static var loginRequired: AIUsageError { .loginRequired(.antigravity) }
+    static var unavailable: AIUsageError { .unavailable(.antigravity) }
+    static var timedOut: AIUsageError { .timedOut(.antigravity) }
+    static var invalidResponse: AIUsageError { .invalidResponse(.antigravity) }
 
     var errorDescription: String? {
         switch self {
         case .missingHelper:
             return "额度组件缺失，请重新安装应用。"
         case .loginRequired(let provider):
-            switch provider {
-            case .codex:
-                return "需要 Codex 登录授权。请在 Codex 中完成登录，再点击刷新。"
-            case .antigravity:
-                return "需要 Antigravity 登录授权。请在 Antigravity 中完成登录，再点击刷新。"
-            }
+            return "需要 \(provider.displayName) 登录授权。请在 \(provider.displayName) 中完成登录，再点击刷新。"
         case .notRunning(let provider):
-            switch provider {
-            case .antigravity:
-                return "未检测到 Antigravity 运行。请启动 Antigravity IDE 或运行 agy。"
-            case .codex:
-                return "未检测到 Codex 运行环境。"
-            }
+            return "未检测到 \(provider.displayName) 运行。请启动 \(provider.displayName) IDE 或运行 agy。"
         case .unavailable(let provider):
             return "暂时无法读取 \(provider.displayName) 订阅额度，请检查网络及登录状态后重试。"
         case .timedOut(let provider):
@@ -168,7 +153,7 @@ enum CodexQuotaParser {
 
     static func parse(
         _ data: Data,
-        expectedProvider: AIUsageProvider = .codex,
+        expectedProvider: AIUsageProvider = .antigravity,
         receivedAt: Date = Date()
     ) throws -> AIUsageSnapshot {
         let decoder = JSONDecoder()
@@ -239,7 +224,7 @@ enum CodexQuotaProcess {
         arguments: [String],
         environment: [String: String],
         timeout: TimeInterval = 25,
-        provider: AIUsageProvider = .codex
+        provider: AIUsageProvider = .antigravity
     ) throws -> Data {
         let process = Process()
         let output = Pipe()
@@ -336,7 +321,7 @@ struct CodexQuotaProvider: Sendable {
         )
     }
 
-    func fetch(provider: AIUsageProvider = .codex) async throws -> AIUsageSnapshot {
+    func fetch(provider: AIUsageProvider = .antigravity) async throws -> AIUsageSnapshot {
         let worker = Task.detached(priority: .utility) { () throws -> AIUsageSnapshot in
             guard FileManager.default.isExecutableFile(atPath: helperURL.path),
                   FileManager.default.fileExists(atPath: configURL.path) else {
@@ -349,26 +334,18 @@ struct CodexQuotaProvider: Sendable {
                 "/opt/homebrew/bin",
                 "/usr/local/bin",
                 "\(home)/.local/bin",
-                "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin",
-                "/Applications/ChatGPT.app/Contents/Resources",
-                "\(home)/.codex/plugins/.plugin-appserver/codex-cli/bin",
-                "/Applications/Codex.app/Contents/Resources",
                 "/usr/bin",
                 "/bin"
             ]
             environment["PATH"] = paths.joined(separator: ":") + ":" + (environment["PATH"] ?? "")
             environment["CODEXBAR_CONFIG"] = configURL.path
-            var arguments = [
+            let arguments = [
                 "usage",
                 "--provider", provider.rawValue,
                 "--format", "json",
-                "--json-only"
+                "--json-only",
+                "--source", "auto"
             ]
-            if provider == .codex {
-                arguments.append(contentsOf: ["--source", "cli"])
-            } else if provider == .antigravity {
-                arguments.append(contentsOf: ["--source", "auto"])
-            }
             let data: Data
             do {
                 data = try CodexQuotaProcess.run(
@@ -415,7 +392,6 @@ final class CodexQuotaMonitor: ObservableObject {
     }
 
     @Published private(set) var states: [AIUsageProvider: CodexQuotaState] = [
-        .codex: CodexQuotaState(),
         .antigravity: CodexQuotaState()
     ]
 
@@ -430,14 +406,14 @@ final class CodexQuotaMonitor: ObservableObject {
     private var consumers: Set<CodexQuotaConsumer> = []
     private var refreshTasks: [AIUsageProvider: Task<Void, Never>] = [:]
     private var scheduledTasks: [AIUsageProvider: Task<Void, Never>] = [:]
-    private var generations: [AIUsageProvider: UInt64] = [.codex: 0, .antigravity: 0]
+    private var generations: [AIUsageProvider: UInt64] = [.antigravity: 0]
     private var lastAttempts: [AIUsageProvider: TimeInterval] = [:]
     private let fetchProvider: @Sendable (AIUsageProvider) async throws -> AIUsageSnapshot
     private let interval: @Sendable () -> TimeInterval
     private let userDefaults: UserDefaults?
 
     init(
-        defaultProvider: AIUsageProvider = .codex,
+        defaultProvider: AIUsageProvider = .antigravity,
         fetchProvider: @escaping @Sendable (AIUsageProvider) async throws -> AIUsageSnapshot = { provider in
             try await CodexQuotaProvider.bundled.fetch(provider: provider)
         },
@@ -462,7 +438,7 @@ final class CodexQuotaMonitor: ObservableObject {
         fetch: @escaping @Sendable () async throws -> AIUsageSnapshot,
         interval: @escaping @Sendable () -> TimeInterval = { 60 }
     ) {
-        self.init(defaultProvider: .codex, fetchProvider: { _ in try await fetch() }, interval: interval, userDefaults: nil)
+        self.init(defaultProvider: .antigravity, fetchProvider: { _ in try await fetch() }, interval: interval, userDefaults: nil)
     }
 
     deinit {

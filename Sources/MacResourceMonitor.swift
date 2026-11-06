@@ -1558,7 +1558,7 @@ private enum DashboardSection: String, CaseIterable, Identifiable {
         switch self {
         case .monitor: return "性能与硬件状态"
         case .traffic: return "实时进程上下行"
-        case .aiUsage: return "Codex 与 Antigravity 额度"
+        case .aiUsage: return "Antigravity 配额与模型用量"
         case .ports: return "USB-C、雷雳与供电"
         }
     }
@@ -2077,10 +2077,6 @@ private struct DashboardView: View {
 
             Spacer(minLength: 14)
 
-            if selectedSection == .aiUsage {
-                AIProviderSegmentedControl(selectedProvider: $codexQuotaModel.selectedProvider)
-            }
-
             Button(action: performHeroAction) {
                 HStack(spacing: 5) {
                     Image(systemName: "arrow.clockwise")
@@ -2171,9 +2167,7 @@ private struct DashboardView: View {
         case .monitor: return "处理器、内存、温控与硬件实时状态"
         case .traffic: return "按应用进程实时统计上下行速率与累计流量"
         case .aiUsage:
-            return codexQuotaModel.selectedProvider == .antigravity
-                ? "Gemini 与 Claude / GPT 模型池订阅配额"
-                : "Codex 5 小时会话与 7 天每周订阅额度"
+            return "Gemini 与 Claude / GPT 模型池订阅配额"
         case .ports: return "USB-C、雷雳接口连接与充电功率协商"
         }
     }

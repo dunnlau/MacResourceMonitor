@@ -8,21 +8,21 @@
 
 <h1 align="center">Mac 资源监控</h1>
 
-<p align="center">系统实时遥测、本地代理穿透进程流量、Codex & Antigravity 订阅配额与端口供电监测 — 纯粹、克制的原生 macOS 监控工具。</p>
+<p align="center">系统实时遥测、本地代理穿透进程流量、Antigravity 订阅配额与端口供电监测 — 纯粹、克制的原生 macOS 监控工具。</p>
 
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111111?logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-0A84FF">
-  <img alt="Version" src="https://img.shields.io/badge/version-2.8.2-0A84FF">
+  <img alt="Version" src="https://img.shields.io/badge/version-2.8.3-0A84FF">
   <img alt="CI" src="https://github.com/dunnlau/MacResourceMonitor/actions/workflows/ci.yml/badge.svg">
 </p>
 
-> 当前版本：**2.8.2（Build 49）**
+> 当前版本：**2.8.3（Build 50）**
 
-基于 SwiftUI 的原生仪表盘与菜单栏监控，集中查看系统资源、进程流量、Codex / Antigravity 订阅额度，以及 USB-C / 雷雳端口状态。支持明暗主题，以不同指标色和清晰文字层级呈现数据。
+基于 SwiftUI 的原生仪表盘与菜单栏监控，集中查看系统资源、进程流量、Antigravity 订阅配额，以及 USB-C / 雷雳端口状态。支持明暗主题，以不同指标色和清晰文字层级呈现数据。
 ## 下载与安装
 
-**[下载 MacResourceMonitor-2.8.2.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v2.8.2/MacResourceMonitor-2.8.2.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
+**[下载 MacResourceMonitor-2.8.3.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v2.8.3/MacResourceMonitor-2.8.3.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
 
 需要 **macOS 26 或更高版本，以及 Apple Silicon 芯片**。不支持 Intel Mac 和旧版 macOS。
 
@@ -35,7 +35,7 @@
 如需校验下载完整性，将同名 `.zip.sha256` 文件下载到相同目录，运行：
 
 ```zsh
-shasum -a 256 -c MacResourceMonitor-2.8.2.zip.sha256
+shasum -a 256 -c MacResourceMonitor-2.8.3.zip.sha256
 ```
 
 ## 功能概览
@@ -44,10 +44,10 @@ shasum -a 256 -c MacResourceMonitor-2.8.2.zip.sha256
 | --- | --- |
 | 系统监控 | CPU 负载、物理内存、2 分钟双轴走势图、核心温度、散热风扇、电池与充电功率、高负载进程与系统环境概览 |
 | 进程流量 | 穿透 `127.0.0.1` 本地系统代理与 `utun` 虚拟网卡显示可归属的应用流量；自动将 `Helper` 子进程归属回宿主 `.app` 并渲染真实图标；默认剥离代理隧道守护进程的二次汇总流量 |
-| AI 用量 | 同时支持 **OpenAI Codex**（5 小时会话 + 7 天每周窗口）与 **Google Antigravity**（Gemini 模型池 + Claude / GPT 模型池的 5 小时与 7 天双窗口）订阅配额监控与一键切换 |
+| AI 用量 | 监控 **Google Antigravity**（Gemini 模型池 + Claude / GPT 模型池的 5 小时短时与 7 天每周双窗口）订阅配额与模型用量 |
 | 接口监测 | 只读检测 USB-C、MagSafe、USB4、Thunderbolt、DisplayPort、USB-PD 协商功率上限与线缆 E-Marker 标识 |
 
-菜单栏弹窗集中展示核心负载指标、**当前活跃进程流量 Top 3**、硬件供电状态以及可快速切换的 **Codex / Antigravity 额度摘要**。
+菜单栏弹窗集中展示核心负载指标、**当前活跃进程流量 Top 3**、硬件供电状态以及 **Antigravity 额度摘要**。
 
 ## 刷新策略与低功耗设计
 
@@ -63,12 +63,11 @@ shasum -a 256 -c MacResourceMonitor-2.8.2.zip.sha256
 
 进程归属取决于 macOS 暴露的计数器；短连接及暂停采样期间的流量可能遗漏，过滤后的代理数据不能作为完整流量账单。温度、风扇和线缆字段取决于硬件支持。
 
-## 2.8.2 更新
+## 2.8.3 更新
 
-- 修复 Antigravity / AI 订阅配额探测在冷启动或探测失败后被 60 秒冷却节流锁定的问题，错误状态下进入前台或切换平台立即触发即时重试。
-- 将所选 AI Provider 接入 `UserDefaults` 持久化，应用重启后保持用户选择，默认优先 Antigravity。
-- 菜单栏“AI 订阅配额”卡片在出错时增加一键重试按钮，无需打开仪表盘大窗口即可刷新。
-- 增加错误恢复即时重试与 UserDefaults 跨启动持久化的自动化回归测试。
+- 彻底下线已停止使用的 Codex 配额监控服务，将 AI 订阅配额监控聚焦于 Google Antigravity（支持 Gemini 模型池与 Claude / GPT 模型池的双窗口统计）。
+- 移除主界面导航栏与菜单栏面板中的双平台切换选择器，下线冗余的 Codex 配置、路径与提示信息。
+- 精简并加固后台按需轮询、免节流重试与子进程环境，提升响应效率与稳定性。
 
 历史版本说明保留在 [GitHub Releases](https://github.com/dunnlau/MacResourceMonitor/releases)。
 
@@ -93,13 +92,13 @@ open "Mac资源监控.app"
 
 - [Stats](https://github.com/exelban/stats)：Apple SMC 访问方式参考。
 - [WhatCable](https://github.com/darrylmorley/whatcable)：只读接口与线缆检测。
-- [CodexBar](https://github.com/steipete/CodexBar)：通过其 CLI 查询 Codex 与 Antigravity 订阅配额。
+- [CodexBar](https://github.com/steipete/CodexBar)：通过其 CLI 查询 Antigravity 订阅配额。
 
 版权和许可证见[第三方声明](THIRD_PARTY_NOTICES.md)与 [CodexBar 依赖许可证](Assets/CodexBarLicenses)。
 
 ## 版本信息
 
-- App 版本：2.8.2
-- Build：49
+- App 版本：2.8.3
+- Build：50
 - Bundle ID：`io.github.svsvnm.MacResourceMonitor`
 - 构建目标：macOS 26.0+，arm64

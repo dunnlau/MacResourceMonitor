@@ -17,7 +17,7 @@ struct CodexQuotaTests {
         }
     }
 
-    static let valid = Data(#"[{"provider":"codex","usage":{"primary":{"usedPercent":28,"windowMinutes":300,"resetsAt":"2026-09-05T12:00:00.000Z"},"secondary":{"usedPercent":59,"windowMinutes":10080,"resetsAt":"2026-09-08T12:00:00Z"},"identity":{"loginMethod":"Plus"}}}]"#.utf8)
+    static let valid = Data(#"[{"provider":"antigravity","usage":{"primary":{"usedPercent":28,"windowMinutes":300,"resetsAt":"2026-09-05T12:00:00.000Z"},"secondary":{"usedPercent":59,"windowMinutes":10080,"resetsAt":"2026-09-08T12:00:00Z"},"identity":{"loginMethod":"AI Pro"}}}]"#.utf8)
 
     @MainActor static func main() async throws {
         if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--live" {
@@ -35,37 +35,37 @@ struct CodexQuotaTests {
             return
         }
 
-        // 1. Codex Parser tests
+        // 1. Antigravity Parser basic tests
         let snapshot = try CodexQuotaParser.parse(valid)
-        expect(snapshot.provider == .codex, "codex provider identified")
+        expect(snapshot.provider == .antigravity, "antigravity provider identified")
         expect(snapshot.primary?.remainingPercent == 72, "used and remaining must not be swapped")
         expect(snapshot.secondary?.remainingPercent == 41, "weekly conversion")
         expect(snapshot.primary?.resetsAt != nil && snapshot.secondary?.resetsAt != nil, "both ISO date formats")
 
-        let zero = Data(#"[{"provider":"codex","usage":{"primary":{"usedPercent":100},"secondary":null}}]"#.utf8)
+        let zero = Data(#"[{"provider":"antigravity","usage":{"primary":{"usedPercent":100},"secondary":null}}]"#.utf8)
         expect(tryRemaining(zero) == 0, "exhaustion must be a real zero")
-        let missing = Data(#"[{"provider":"codex","usage":{"primary":null,"secondary":{"usedPercent":12}}}]"#.utf8)
+        let missing = Data(#"[{"provider":"antigravity","usage":{"primary":null,"secondary":{"usedPercent":12}}}]"#.utf8)
         let missingSnapshot = try CodexQuotaParser.parse(missing)
         expect(missingSnapshot.primary == nil, "missing primary must remain unavailable")
-        for json in [#"[{"provider":"codex","usage":{"primary":{"usedPercent":0,"isSyntheticPlaceholder":true}}}]"#,
-                     #"[{"provider":"codex","usage":{}}]"#, #"{}"#] {
+        for json in [#"[{"provider":"antigravity","usage":{"primary":{"usedPercent":0,"isSyntheticPlaceholder":true}}}]"#,
+                     #"[{"provider":"antigravity","usage":{}}]"#, #"{}"#] {
             do {
                 _ = try CodexQuotaParser.parse(Data(json.utf8))
                 fatalError("invalid quota accepted")
             } catch {
-                expect(error as? CodexQuotaError == .invalidResponse(.codex), "missing quota classification")
+                expect(error as? CodexQuotaError == .invalidResponse(.antigravity), "missing quota classification")
             }
         }
         do {
-            _ = try CodexQuotaParser.parse(Data(#"[{"provider":"codex","error":{"message":"401 credentials expired secret-value"}}]"#.utf8))
+            _ = try CodexQuotaParser.parse(Data(#"[{"provider":"antigravity","error":{"message":"401 credentials expired secret-value"}}]"#.utf8))
             fatalError("auth error accepted")
         } catch {
-            expect(error as? CodexQuotaError == .loginRequired(.codex), "auth classification")
+            expect(error as? CodexQuotaError == .loginRequired(.antigravity), "auth classification")
             expect(!error.localizedDescription.contains("secret-value"), "raw errors must not leak")
         }
-        print("Codex Parser: remaining, exhaustion, unavailable, placeholder, dates, auth redaction passed")
+        print("Antigravity Parser: remaining, exhaustion, unavailable, placeholder, dates, auth redaction passed")
 
-        // 2. Antigravity Parser tests
+        // 2. Antigravity Parser multi-window tests
         let antigravityValid = Data(#"[{"provider":"antigravity","usage":{"accountEmail":"user@example.com","primary":{"usedPercent":15,"windowMinutes":10080,"resetsAt":"2026-09-20T18:00:00.000Z"},"secondary":{"usedPercent":40,"windowMinutes":10080,"resetsAt":"2026-09-27T18:00:00Z"},"extraRateWindows":[{"id":"antigravity-quota-summary-gemini-5h","title":"Gemini 5-hour","window":{"usedPercent":2,"windowMinutes":300,"resetsAt":"2026-09-20T12:00:00Z"}},{"id":"antigravity-quota-summary-3p-5h","title":"Claude/GPT 5-hour","window":{"usedPercent":5,"windowMinutes":300,"resetsAt":"2026-09-20T12:00:00Z"}}],"identity":{"loginMethod":"AI Pro"}}}]"#.utf8)
         let agySnapshot = try CodexQuotaParser.parse(antigravityValid, expectedProvider: .antigravity)
         expect(agySnapshot.provider == .antigravity, "antigravity provider identified")
@@ -108,14 +108,14 @@ struct CodexQuotaTests {
         print("Lifecycle: shared fetch, cache throttle, hidden refresh suppression passed")
 
         model.setActive(true, for: .dashboard)
-        await source.fail(with: .unavailable(.codex))
+        await source.fail(with: .unavailable(.antigravity))
         model.refresh(force: true)
-        try await waitUntil("transient failure completes") { model.state.error == .unavailable(.codex) && !model.state.isRefreshing }
-        expect(model.state.snapshot == snapshot && model.state.error == .unavailable(.codex), "transient error retains labeled cache")
-        await source.fail(with: .loginRequired(.codex))
+        try await waitUntil("transient failure completes") { model.state.error == .unavailable(.antigravity) && !model.state.isRefreshing }
+        expect(model.state.snapshot == snapshot && model.state.error == .unavailable(.antigravity), "transient error retains labeled cache")
+        await source.fail(with: .loginRequired(.antigravity))
         model.refresh(force: true)
-        try await waitUntil("auth failure completes") { model.state.error == .loginRequired(.codex) && !model.state.isRefreshing }
-        expect(model.state.snapshot == nil && model.state.error == .loginRequired(.codex), "auth failure clears cached account quota")
+        try await waitUntil("auth failure completes") { model.state.error == .loginRequired(.antigravity) && !model.state.isRefreshing }
+        expect(model.state.snapshot == nil && model.state.error == .loginRequired(.antigravity), "auth failure clears cached account quota")
         model.setActive(false, for: .dashboard)
 
         let tickingSource = ControlledSource(snapshot: snapshot)
@@ -182,78 +182,34 @@ struct CodexQuotaTests {
             }
         }
         print("Provider errors: empty and oversized subprocess output passed")
-
         print("Cancellation and subprocess timeout passed")
 
-        // 4. Multi-provider switching tests
-        let agySource = ControlledSource(snapshot: agySnapshot)
-        let multiSource = ControlledSource(snapshot: snapshot)
-        let multiModel = CodexQuotaMonitor(
-            fetchProvider: { provider in
-                switch provider {
-                case .codex: return try await multiSource.fetch()
-                case .antigravity: return try await agySource.fetch()
-                }
-            },
-            interval: { 60 }
-        )
-        multiModel.setActive(true, for: .dashboard)
-        try await waitUntil("codex initial fetch completes") { multiModel.state.snapshot == snapshot && !multiModel.state.isRefreshing }
-        expect(multiModel.selectedProvider == .codex, "default provider is codex")
-        expect(multiModel.state.snapshot?.provider == .codex, "codex snapshot loaded")
-
-        multiModel.selectedProvider = .antigravity
-        try await waitUntil("antigravity fetch completes upon switch") { multiModel.state.snapshot == agySnapshot && !multiModel.state.isRefreshing }
-        expect(multiModel.selectedProvider == .antigravity, "provider switched to antigravity")
-        expect(multiModel.state.snapshot?.provider == .antigravity, "antigravity snapshot loaded")
-
-        let codexCountBefore = await multiSource.count
-        multiModel.selectedProvider = .codex
-        expect(multiModel.state.snapshot == snapshot, "cached codex snapshot retained immediately")
-        let codexCountAfter = await multiSource.count
-        expect(codexCountBefore == codexCountAfter, "switching to cached provider does not re-fetch")
-        multiModel.setActive(false, for: .dashboard)
-        let counts = ProviderCounts()
-        let polling = CodexQuotaMonitor(fetchProvider: { provider in
-            await counts.record(provider)
-            return provider == .codex ? snapshot : agySnapshot
-        }, interval: { 0.08 })
+        // 4. Polling, cancellation and background lifecycle tests
+        let agyCounts = ControlledSource(snapshot: agySnapshot)
+        let polling = CodexQuotaMonitor(fetch: { try await agyCounts.fetch() }, interval: { 0.08 })
         polling.setActive(true, for: .dashboard)
-        try await waitUntil("first provider ready") { polling.state.snapshot == snapshot && !polling.state.isRefreshing }
-        polling.selectedProvider = .antigravity
-        let codexStopped = await counts.count(.codex)
-        try await waitUntil("selected provider polls repeatedly") { await counts.count(.antigravity) >= 3 }
-        let codexLater = await counts.count(.codex)
-        expect(codexLater == codexStopped, "unselected provider must stop polling")
-        expect(polling.state(for: .codex).snapshot == snapshot, "switch retains previous snapshot")
+        try await waitUntil("antigravity polling completes") { await agyCounts.count >= 2 }
         polling.setActive(false, for: .dashboard)
-        let agyStopped = await counts.count(.antigravity)
+        let agyStopped = await agyCounts.count
         try await Task.sleep(nanoseconds: 200_000_000)
-        let agyLater = await counts.count(.antigravity)
-        expect(agyStopped == agyLater, "hiding stops selected provider")
+        let agyLater = await agyCounts.count
+        expect(agyStopped == agyLater, "hiding stops polling")
 
         let cancellation = CancellationProbe()
-        let switching = CodexQuotaMonitor(fetchProvider: { provider in
-            if provider == .codex {
-                do { try await Task.sleep(nanoseconds: 5_000_000_000) }
-                catch {
-                    await cancellation.record()
-                    // Simulate a provider completing even after cancellation.
-                    return snapshot
-                }
+        let slowMonitor = CodexQuotaMonitor(fetch: {
+            do { try await Task.sleep(nanoseconds: 5_000_000_000) }
+            catch {
+                await cancellation.record()
+                return agySnapshot
             }
-            return provider == .codex ? snapshot : agySnapshot
+            return agySnapshot
         }, interval: { 0.08 })
-        switching.setActive(true, for: .dashboard)
+        slowMonitor.setActive(true, for: .dashboard)
         try await Task.sleep(nanoseconds: 30_000_000)
-        switching.selectedProvider = .antigravity
-        try await waitUntil("switch cancels inflight provider") { await cancellation.cancelled }
-        try await waitUntil("replacement provider ready") { switching.state.snapshot == agySnapshot && !switching.state.isRefreshing }
-        expect(switching.state(for: .codex).snapshot == nil, "cancelled late result discarded")
-        expect(!switching.state(for: .codex).isRefreshing, "cancelled state cleared")
-        switching.setActive(false, for: .dashboard)
-        print("Provider switching: inactive polling, inflight cancellation, cache retention passed")
-        print("Multi-provider: switching, independent states, cache retention passed")
+        slowMonitor.setActive(false, for: .dashboard)
+        try await waitUntil("deactivation cancels inflight request") { await cancellation.cancelled }
+        expect(slowMonitor.state.snapshot == nil, "cancelled late result discarded")
+        print("Antigravity lifecycle: polling, cancellation on deactivation passed")
 
         // 5. Error recovery unthrottled test
         let recoverSource = ControlledSource(snapshot: agySnapshot)
@@ -277,19 +233,10 @@ struct CodexQuotaTests {
         recoverModel.setActive(false, for: .dashboard)
         print("Error state unthrottled immediate retry passed")
 
-        // 6. UserDefaults persistence test
-        let suiteName = "io.github.svsvnm.MacResourceMonitor.Tests.\(UUID().uuidString)"
-        let testDefaults = UserDefaults(suiteName: suiteName)!
-        defer { testDefaults.removePersistentDomain(forName: suiteName) }
-
-        let customModel = CodexQuotaMonitor(defaultProvider: .antigravity, userDefaults: testDefaults)
-        expect(customModel.selectedProvider == .antigravity, "honors defaultProvider when user defaults empty")
-        customModel.selectedProvider = .codex
-        expect(testDefaults.string(forKey: CodexQuotaMonitor.selectedProviderDefaultsKey) == "codex", "persists selected provider")
-
-        let restoredModel = CodexQuotaMonitor(defaultProvider: .antigravity, userDefaults: testDefaults)
-        expect(restoredModel.selectedProvider == .codex, "restores previously selected provider from user defaults")
-        print("UserDefaults provider persistence passed")
+        // 6. Provider default configuration test
+        let customModel = CodexQuotaMonitor(defaultProvider: .antigravity)
+        expect(customModel.selectedProvider == .antigravity, "honors defaultProvider as antigravity")
+        print("Provider default configuration passed")
     }
 
     static func tryRemaining(_ data: Data) -> Double? {
@@ -310,7 +257,6 @@ actor ControlledSource {
     }
     func fail(with error: CodexQuotaError?) { self.error = error }
 }
-
 
 actor ProviderCounts {
     private var values: [AIUsageProvider: Int] = [:]
