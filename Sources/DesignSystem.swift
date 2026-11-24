@@ -491,6 +491,60 @@ struct TelemetryProgressBar: View {
     }
 }
 
+struct RadialGaugeRing: View {
+    let progress: Double // 0...100
+    let tint: Color
+    let valueText: String
+    var caption: String? = nil
+    var size: CGFloat = 68
+    var lineWidth: CGFloat = 6.5
+
+    var body: some View {
+        let clamped = min(1, max(0, progress / 100.0))
+        let arcSpan: Double = 0.78 // 280-degree open gauge
+
+        ZStack {
+            Circle()
+                .trim(from: 0, to: arcSpan)
+                .stroke(
+                    tint.opacity(0.14),
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(129.6))
+
+            Circle()
+                .trim(from: 0, to: max(0.015, clamped * arcSpan))
+                .stroke(
+                    LinearGradient(
+                        colors: [tint.opacity(0.70), tint],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(129.6))
+
+            VStack(spacing: 1) {
+                Text(valueText)
+                    .font(.system(size: size * 0.25, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                if let caption {
+                    Text(caption)
+                        .font(.system(size: max(8.5, size * 0.13), weight: .semibold, design: .monospaced))
+                        .foregroundStyle(InterfacePalette.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, lineWidth + 2)
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
 struct MetricSummaryCard: View {
     let title: String
     let value: String
