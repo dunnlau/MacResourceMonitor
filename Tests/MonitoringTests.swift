@@ -104,5 +104,31 @@ struct MonitoringTests {
         expect(parsedAssertions[0].pid == 412 && parsedAssertions[0].processName == "caffeinate", "first assertion parsed")
         expect(parsedAssertions[1].pid == 901 && parsedAssertions[1].reason == "Playing video", "second assertion reason parsed")
         print("Storage & Battery diagnostics: rate math, purgeable bytes, health, sleep assertions passed")
+
+        let lsofSample = """
+        p1234
+        cnode
+        PTCP
+        n127.0.0.1:3000
+        n[::1]:3000
+        p5678
+        cpython3
+        PTCP
+        n*:8080
+        """
+        let ports = LocalPortsParser.parseLsofFieldOutput(lsofSample)
+        expect(ports.count == 3, "lsof parsed three TCP listeners")
+        expect(ports[0].port == 3000 && ports[0].isLoopbackOnly, "loopback IPv4 listener detected")
+        expect(ports[1].ipVersion == "IPv6" && ports[1].isLoopbackOnly, "loopback IPv6 listener detected")
+        expect(ports[2].port == 8080 && !ports[2].isLoopbackOnly, "wildcard listener detected")
+
+        let pingSample = "64 bytes from 1.1.1.1: icmp_seq=0 ttl=57 time=14.823 ms\n"
+        expect(NetworkDiagnosticsParser.parsePingLatencyMs(pingSample) == 14.823, "ping RTT parsed")
+        expect(NetworkDiagnosticsParser.parsePingLatencyMs("Request timeout for icmp_seq 0") == nil, "timeout returns nil")
+
+        expect(PeripheralClassifier.inferCategory(for: "AirPods Pro") == "音频设备", "AirPods category")
+        expect(PeripheralClassifier.inferCategory(for: "Magic Keyboard") == "键盘", "Keyboard category")
+        expect(PeripheralClassifier.inferCategory(for: "Magic Trackpad") == "触控板", "Trackpad category")
+        print("LocalPorts, NetworkDiagnostics & Peripherals parsers passed")
     }
 }

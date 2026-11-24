@@ -13,16 +13,16 @@
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111111?logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-0A84FF">
-  <img alt="Version" src="https://img.shields.io/badge/version-2.9.0-0A84FF">
+  <img alt="Version" src="https://img.shields.io/badge/version-3.0.0-0A84FF">
   <img alt="CI" src="https://github.com/dunnlau/MacResourceMonitor/actions/workflows/ci.yml/badge.svg">
 </p>
 
-> Current version: **2.9.0 (Build 53)**
+> Current version: **3.0.0 (Build 54)**
 
-A native SwiftUI dashboard and menu bar monitor for system resources, per-process network traffic, and USB-C / Thunderbolt diagnostics. Light and dark appearances use distinct metric colors and clear text hierarchy.
+A native SwiftUI dashboard and menu bar monitor for system resources, per-process network traffic, local listening ports, Wi-Fi diagnostics, hardware ports, battery health, and peripherals. Light and dark appearances use distinct metric colors and clear text hierarchy.
 ## Download and Install
 
-**[Download MacResourceMonitor-2.9.0.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v2.9.0/MacResourceMonitor-2.9.0.zip)** · [Release notes and checksums](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
+**[Download MacResourceMonitor-3.0.0.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v3.0.0/MacResourceMonitor-3.0.0.zip)** · [Release notes and checksums](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
 
 Requires **macOS 26 or later and Apple Silicon**. Intel Macs and earlier macOS versions are not supported.
 
@@ -35,7 +35,7 @@ The app is ad-hoc signed, not Apple Developer ID signed or notarized. If macOS b
 For an integrity check, download the matching `.zip.sha256` file into the same directory and run:
 
 ```zsh
-shasum -a 256 -c MacResourceMonitor-2.9.0.zip.sha256
+shasum -a 256 -c MacResourceMonitor-3.0.0.zip.sha256
 ```
 
 ## Features
@@ -43,28 +43,29 @@ shasum -a 256 -c MacResourceMonitor-2.9.0.zip.sha256
 | Module | What it shows or does |
 | --- | --- |
 | System | **Overview**: CPU & memory load, 2-minute dual-series trend chart, Apple Silicon **P-Core / E-Core cluster breakdown**, **GPU utilization & memory**, core temperature, fan speed, top processes.<br>**Storage**: Live disk read/write throughput & 2-minute chart, primary NVMe SMART health, mounted volumes, purgeable space, and safe eject |
-| Process Traffic | Shows available client counters behind `127.0.0.1` local system proxies and `utun` virtual interfaces; resolves `.app` host bundles and icons for `Helper` subprocesses; strips duplicate proxy/TUN daemon forwarding totals by default |
-| Hardware & Power | **Ports & Cables**: Read-only inspection of USB-C, MagSafe, USB4, Thunderbolt, DisplayPort, negotiated USB-PD power limits, and cable E-Marker identity.<br>**Battery & Power**: Battery health %, cycle count, cell temperature/voltage/current, power breakdown, and **sleep-preventing process assertions** |
+| Network & Services | **Process Traffic**: Proxy-aware client traffic behind `127.0.0.1` & `utun`, `.app` host attribution, duplicate proxy tunnel stripping.<br>**Local Ports**: Listening TCP ports with app icons, PID, bind address, copy/open `localhost`, and safe `SIGTERM`.<br>**Network Diagnostics**: Wi-Fi RSSI/SNR/Tx rate/channel, IP/gateway/DNS/proxy config, and live gateway/internet latency chart |
+| Hardware & Power | **Ports & Cables**: Read-only USB-C, MagSafe, USB4, Thunderbolt, DisplayPort, USB-PD power limits, and cable E-Marker identity.<br>**Battery & Power**: Battery health %, cycle count, cell temperature/voltage/current, power breakdown, and sleep-preventing assertions.<br>**Peripherals & Displays**: Connected displays (resolution, refresh rate, HDR/EDR) and Bluetooth/HID wireless peripheral batteries |
+| Preferences | Customizable menu bar metrics (temperature, CPU, memory, network, power), thermal/CPU local notification thresholds, and launch at login (`SMAppService`) |
 
 The menu bar popover provides an at-a-glance view of core system load, **top three active network processes**, and hardware power state.
 
 ## Refresh Policy and Low Power Design
 
-- **Lightweight System Telemetry**: Refreshes every **2 seconds**. Closing the main window leaves the menu bar item displaying live CPU temperature and network throughput.
-- **Fast Baseline & Visibility-Scoped Process Traffic**: `nettop` sampling runs only while the menu popover or Process Traffic view is open. Cold start uses a **0.32s fast differential baseline** for sub-second initial rates and reuses the in-memory baseline when switching tabs within 15 seconds; closing both views stops sampling immediately.
+- **Lightweight System Telemetry**: Refreshes every **2 seconds**. Closing the main window leaves the menu bar item displaying your chosen live metrics.
+- **Visibility-Scoped Sub-Monitors**: Process traffic (`nettop`), local port scans (`lsof`), latency probes (`ping`), storage I/O, and peripheral scans run only while their respective view is visible and stop immediately when hidden.
 
 ## Privacy, Safety, and Limits
 
-- All hardware, process, and port metrics are processed locally in memory without uploading app telemetry and no kernel extensions, VPNs, or privileged daemons.
+- All hardware, process, network, and port metrics are processed locally in memory without uploading app telemetry and no kernel extensions, VPNs, or privileged daemons.
 - Process traffic uses read-only byte counters from macOS `nettop` without inspecting domains, packet payloads, or connection contents.
 
 Process attribution depends on the counters macOS exposes. Short-lived connections and traffic while sampling is paused may be missed; filtered proxy totals are not a full accounting of all traffic. Sensor and cable fields depend on hardware support.
 
-## What's New in 2.9.0
+## What's New in 3.0.0
 
-- **Apple Silicon Compute Breakdown**: Add real-time P-Core vs E-Core per-core load bars and GPU utilization / active memory telemetry to the System Monitor overview.
-- **Disk I/O & Storage Diagnostics**: Add an in-page **Storage** sub-tab under System Monitor with live disk read/write rates, 2-minute I/O trend chart, primary NVMe SMART health, mounted volume breakdown, purgeable space, and one-click safe eject.
-- **Battery Health & Sleep Assertions**: Upgrade Ports into **Hardware & Power** with an in-page **Battery & Power** sub-tab showing battery health %, cycle count, cell temperature/voltage/current, power breakdown, and active sleep-preventing processes (`pmset -g assertions`).
+- **Network & Services Hub**: Consolidate Process Traffic with two new in-page tabs — **Local Ports** (TCP listener inspector with copy/open `localhost` and safe `SIGTERM`) and **Network Diagnostics** (CoreWLAN Wi-Fi metrics, IP/DNS/proxy summary, and gateway/internet latency chart).
+- **Peripherals & Displays**: Add an in-page **Peripherals & Displays** tab under Hardware & Power showing display resolutions, refresh rates, HDR/EDR support, and Bluetooth/HID wireless device battery levels.
+- **Preferences**: Add a compact bottom **Preferences** section for customizable menu bar items, high-temperature / sustained high-CPU local notifications, and native Launch at Login (`SMAppService`).
 
 Older release notes remain in [GitHub Releases](https://github.com/dunnlau/MacResourceMonitor/releases).
 
@@ -94,7 +95,7 @@ See [third-party notices](THIRD_PARTY_NOTICES.md) for attribution and license te
 
 ## Version
 
-- App version: 2.9.0
-- Build: 53
+- App version: 3.0.0
+- Build: 54
 - Bundle ID: `io.github.svsvnm.MacResourceMonitor`
 - Target: macOS 26.0+, arm64
