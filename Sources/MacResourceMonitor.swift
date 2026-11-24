@@ -1544,111 +1544,13 @@ private struct CableSection: View {
     ]
 
     var body: some View {
-        let totalPorts = monitor.ports.count
-        let activePorts = monitor.activePorts.count
-        let occupancyPercent = totalPorts > 0 ? (Double(activePorts) / Double(totalPorts)) * 100.0 : 0
-        let activeTransports = Array(Set(monitor.activePorts.flatMap(\.activeTransports))).sorted()
-
-        VStack(alignment: .leading, spacing: InterfaceMetrics.sectionSpacing) {
-            HStack(alignment: .top, spacing: InterfaceMetrics.sectionSpacing) {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 7) {
-                        IconBadge(symbol: "cable.connector", tint: InterfacePalette.accent, size: 24, iconSize: 11.5, cornerRadius: 6)
-                        Text("物理端口占用")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.primary)
-                        Spacer(minLength: 4)
-                        StatusBadge(
-                            text: activePorts == 0 ? "全部空闲" : "\(activePorts) 个已连接",
-                            tint: activePorts == 0 ? InterfacePalette.textSecondary : InterfacePalette.signal,
-                            showDot: activePorts > 0
-                        )
-                    }
-
-                    HStack(alignment: .center, spacing: 14) {
-                        RadialGaugeRing(
-                            progress: occupancyPercent,
-                            tint: activePorts > 0 ? InterfacePalette.accent : InterfacePalette.textSecondary,
-                            valueText: "\(activePorts)/\(totalPorts)",
-                            caption: "PORTS",
-                            size: 74,
-                            lineWidth: 6.5
-                        )
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 6) {
-                                Text("活跃协议")
-                                    .font(.system(size: 10.5, weight: .medium))
-                                    .foregroundStyle(InterfacePalette.textTertiary)
-                                Spacer(minLength: 4)
-                                Text(activeTransports.isEmpty ? "无" : activeTransports.joined(separator: " · "))
-                                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                            }
-                            HStack(spacing: 6) {
-                                Text("可用空闲")
-                                    .font(.system(size: 10.5, weight: .medium))
-                                    .foregroundStyle(InterfacePalette.textTertiary)
-                                Spacer(minLength: 4)
-                                Text("\(max(0, totalPorts - activePorts)) 个接口")
-                                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(InterfacePalette.textSecondary)
-                            }
-                            HStack(spacing: 6) {
-                                Text("支持类型")
-                                    .font(.system(size: 10.5, weight: .medium))
-                                    .foregroundStyle(InterfacePalette.textTertiary)
-                                Spacer(minLength: 4)
-                                Text("USB-C / 雷雳 / MagSafe")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundStyle(InterfacePalette.textTertiary)
-                                    .lineLimit(1)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .stableDashboardCard()
-
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 7) {
-                        IconBadge(symbol: "powerplug.fill", tint: InterfacePalette.power, size: 24, iconSize: 11.5, cornerRadius: 6)
-                        Text("外部供电协商")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.primary)
-                        Spacer(minLength: 4)
-                        StatusBadge(
-                            text: chargingPower.externalConnected ? "已接电源" : "电池供电",
-                            tint: chargingPower.externalConnected ? InterfacePalette.power : InterfacePalette.textSecondary,
-                            showDot: chargingPower.externalConnected
-                        )
-                    }
-
-                    Text(chargingPower.inputWatts.map { String(format: "%.1f W", $0) } ?? "未接入")
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.primary)
-
-                    Spacer(minLength: 0)
-
-                    Text(chargingPower.externalConnected ? "实时适配器输入功率" : "插入电源或扩展坞后自动刷新")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(InterfacePalette.textTertiary)
-                        .lineLimit(1)
-                }
-                .padding(16)
-                .frame(width: 320, alignment: .topLeading)
-                .frame(maxHeight: .infinity, alignment: .topLeading)
-                .stableDashboardCard()
-            }
-            .fixedSize(horizontal: false, vertical: true)
-
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center) {
-                Text("USB-C / 雷雳端口状态")
-                    .font(InterfaceTypography.cardTitle)
+                HStack(spacing: 8) {
+                    IconBadge(symbol: "cable.connector", tint: InterfacePalette.accent, size: 24, iconSize: 11.5, cornerRadius: 6)
+                    Text("USB-C / 雷雳端口状态")
+                        .font(InterfaceTypography.cardTitle)
+                }
                 Spacer()
                 if isRefreshing {
                     HStack(spacing: 6) {
@@ -1904,21 +1806,6 @@ private enum DashboardSection: String, CaseIterable, Identifiable {
     }
 }
 
-private enum NetworkSubTab: String, CaseIterable, Identifiable {
-    case traffic = "进程流量"
-    case ports = "本地端口"
-    case diagnostics = "网络诊断"
-
-    var id: String { rawValue }
-}
-
-private enum PowerPortSubTab: String, CaseIterable, Identifiable {
-    case battery = "电池能耗"
-    case ports = "接口线缆"
-
-    var id: String { rawValue }
-}
-
 @MainActor
 private final class TransparentWindowBridgeView: NSView {
     private weak var configuredWindow: NSWindow?
@@ -2014,60 +1901,6 @@ private struct SidebarNavigationItem: View {
     }
 }
 
-private struct SectionSegmentedControl<Tab: CaseIterable & Identifiable & RawRepresentable & Hashable>: View where Tab.RawValue == String {
-    @Binding var selection: Tab
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(Array(Tab.allCases)) { option in
-                let isSelected = selection == option
-                Button {
-                    if reduceMotion {
-                        selection = option
-                    } else {
-                        withAnimation(.easeInOut(duration: 0.16)) {
-                            selection = option
-                        }
-                    }
-                } label: {
-                    Text(option.rawValue)
-                        .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
-                        .foregroundStyle(isSelected ? Color.primary : InterfacePalette.textSecondary)
-                        .padding(.horizontal, 12)
-                        .frame(height: 26)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6.5, style: .continuous)
-                                .fill(
-                                    isSelected
-                                        ? (colorScheme == .dark ? Color.white.opacity(0.13) : Color.white)
-                                        : Color.clear
-                                )
-                                .shadow(
-                                    color: isSelected ? Color.black.opacity(colorScheme == .dark ? 0.28 : 0.08) : .clear,
-                                    radius: 2.5,
-                                    y: 1
-                                )
-                        )
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(3)
-        .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(InterfacePalette.subtleSurface)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .stroke(InterfacePalette.cardStroke, lineWidth: 0.65)
-        )
-        .fixedSize(horizontal: true, vertical: false)
-    }
-}
-
 private struct DashboardView: View {
     @ObservedObject var model: MonitorModel
     @ObservedObject var processNetworkModel: ProcessNetworkMonitor
@@ -2079,8 +1912,6 @@ private struct DashboardView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var selectedSection: DashboardSection
-    @State private var networkSubTab: NetworkSubTab = .traffic
-    @State private var powerPortSubTab: PowerPortSubTab = .battery
 
     var body: some View {
         ZStack {
@@ -2118,7 +1949,7 @@ private struct DashboardView: View {
                 }
                 .scrollClipDisabled(false)
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
-                .id(scrollIdentity)
+                .id(selectedSection.rawValue)
             }
         }
         .frame(minWidth: 1060, idealWidth: 1180, minHeight: 720, idealHeight: 830)
@@ -2127,9 +1958,6 @@ private struct DashboardView: View {
             updateResourceConsumers()
         }
         .onChange(of: selectedSection) { _, _ in
-            updateResourceConsumers()
-        }
-        .onChange(of: powerPortSubTab) { _, _ in
             updateResourceConsumers()
         }
         .onDisappear {
@@ -2144,25 +1972,14 @@ private struct DashboardView: View {
         }
     }
 
-    private var scrollIdentity: String {
-        switch selectedSection {
-        case .monitor: return "monitor"
-        case .storage: return "storage"
-        case .traffic: return "network-\(networkSubTab.rawValue)"
-        case .ports: return "power-\(powerPortSubTab.rawValue)"
-        case .peripherals: return "peripherals"
-        case .settings: return "settings"
-        }
-    }
-
     private func updateResourceConsumers() {
         model.updateActiveConsumers([
             .expandedMetrics: selectedSection == .monitor || selectedSection == .ports,
             .processTable: selectedSection == .monitor,
             .siliconCompute: selectedSection == .monitor,
             .storage: selectedSection == .storage,
-            .cable: selectedSection == .ports && powerPortSubTab == .ports,
-            .batteryDiagnostics: selectedSection == .ports && powerPortSubTab == .battery
+            .cable: selectedSection == .ports,
+            .batteryDiagnostics: selectedSection == .ports
         ])
     }
 
@@ -2202,31 +2019,32 @@ private struct DashboardView: View {
                 }
             )
         case .traffic:
-            switch networkSubTab {
-            case .traffic:
-                ProcessTrafficView(model: processNetworkModel)
-            case .ports:
-                LocalPortsView(model: localPortsModel)
-            case .diagnostics:
-                NetworkDiagnosticsView(model: networkDiagnosticsModel)
-            }
+            NetworkWorkspaceView(
+                processNetworkModel: processNetworkModel,
+                localPortsModel: localPortsModel,
+                diagnosticsModel: networkDiagnosticsModel
+            )
         case .ports:
-            switch powerPortSubTab {
-            case .battery:
+            VStack(spacing: InterfaceMetrics.sectionSpacing) {
                 BatteryDiagnosticsView(
                     diagnostics: model.snapshot.batteryDiagnostics,
                     inputWatts: model.snapshot.chargingPower.inputWatts,
                     batteryChargeWatts: model.snapshot.chargingPower.batteryChargeWatts,
                     systemLoadWatts: model.snapshot.chargingPower.systemLoadWatts,
-                    powerSource: model.snapshot.powerSource
+                    powerSource: model.snapshot.powerSource,
+                    showsSleepAssertions: false
                 )
-            case .ports:
+
                 PortMonitorView(
                     monitor: model.snapshot.cableMonitor,
                     chargingPower: model.isRefreshingExpandedMetrics
                         ? ChargingPowerSnapshot()
                         : model.snapshot.chargingPower,
                     isRefreshing: model.isRefreshingCable
+                )
+
+                SleepAssertionsCard(
+                    assertions: model.snapshot.batteryDiagnostics.sleepAssertions
                 )
             }
         case .peripherals:
@@ -2390,12 +2208,6 @@ private struct DashboardView: View {
 
             Spacer(minLength: 14)
 
-            if selectedSection == .traffic {
-                SectionSegmentedControl(selection: $networkSubTab)
-            } else if selectedSection == .ports {
-                SectionSegmentedControl(selection: $powerPortSubTab)
-            }
-
             if selectedSection != .settings {
                 ActionPillButton(
                     title: heroActionTitle,
@@ -2421,40 +2233,16 @@ private struct DashboardView: View {
             }
             return "正在读取存储"
         case .traffic:
-            switch networkSubTab {
-            case .traffic:
-                if let date = processNetworkModel.lastUpdatedAt {
-                    return "采样于 \(date.formatted(date: .omitted, time: .standard))"
-                }
-                return processNetworkModel.errorText ?? "正在采样"
-            case .ports:
-                if let date = localPortsModel.snapshot.updatedAt {
-                    return "扫描于 \(date.formatted(date: .omitted, time: .standard))"
-                }
-                return "正在扫描"
-            case .diagnostics:
-                if let date = networkDiagnosticsModel.snapshot.updatedAt {
-                    return "探测于 \(date.formatted(date: .omitted, time: .standard))"
-                }
-                return "正在探测"
+            if let date = networkDiagnosticsModel.snapshot.updatedAt ?? processNetworkModel.lastUpdatedAt {
+                return "采样于 \(date.formatted(date: .omitted, time: .standard))"
             }
+            return "正在采样网络"
         case .ports:
-            switch powerPortSubTab {
-            case .battery:
-                if let date = model.snapshot.batteryDiagnostics.updatedAt {
-                    return "检测于 \(date.formatted(date: .omitted, time: .standard))"
-                }
-                return "只读电池与休眠检测"
-            case .ports:
-                if model.isRefreshingCable { return "正在检测" }
-                if let error = model.snapshot.cableMonitor.errorText {
-                    return error
-                }
-                if let date = model.snapshot.cableMonitor.updatedAt {
-                    return "检测于 \(date.formatted(date: .omitted, time: .standard))"
-                }
-                return "只读检测"
+            if model.isRefreshingCable { return "正在检测接口" }
+            if let date = model.snapshot.batteryDiagnostics.updatedAt ?? model.snapshot.cableMonitor.updatedAt {
+                return "检测于 \(date.formatted(date: .omitted, time: .standard))"
             }
+            return "只读电池与端口检测"
         case .peripherals:
             if let date = peripheralsModel.snapshot.updatedAt {
                 return "更新于 \(date.formatted(date: .omitted, time: .standard))"
@@ -2470,16 +2258,9 @@ private struct DashboardView: View {
         case .monitor: return "刷新"
         case .storage: return "刷新存储"
         case .traffic:
-            switch networkSubTab {
-            case .traffic: return "清零累计"
-            case .ports: return localPortsModel.isRefreshing ? "扫描中" : "重新扫描"
-            case .diagnostics: return networkDiagnosticsModel.isRefreshing ? "探测中" : "立即探测"
-            }
+            return networkDiagnosticsModel.isRefreshing ? "探测中" : "刷新诊断"
         case .ports:
-            switch powerPortSubTab {
-            case .battery: return "刷新诊断"
-            case .ports: return model.isRefreshingCable ? "检测中" : "重新检测"
-            }
+            return model.isRefreshingCable ? "检测中" : "刷新全部"
         case .peripherals:
             return peripheralsModel.isRefreshing ? "扫描中" : "刷新外设"
         case .settings:
@@ -2490,16 +2271,10 @@ private struct DashboardView: View {
     private var isHeroActionDisabled: Bool {
         switch selectedSection {
         case .monitor, .storage: return false
-        case .traffic:
-            if networkSubTab == .ports { return localPortsModel.isRefreshing }
-            if networkSubTab == .diagnostics { return networkDiagnosticsModel.isRefreshing }
-            return false
-        case .ports:
-            return powerPortSubTab == .ports && model.isRefreshingCable
-        case .peripherals:
-            return peripheralsModel.isRefreshing
-        case .settings:
-            return true
+        case .traffic: return networkDiagnosticsModel.isRefreshing
+        case .ports: return model.isRefreshingCable
+        case .peripherals: return peripheralsModel.isRefreshing
+        case .settings: return true
         }
     }
 
@@ -2510,16 +2285,11 @@ private struct DashboardView: View {
         case .storage:
             model.refresh(forceStorageRefresh: true)
         case .traffic:
-            switch networkSubTab {
-            case .traffic: processNetworkModel.resetSessionTotals()
-            case .ports: localPortsModel.refresh()
-            case .diagnostics: networkDiagnosticsModel.refresh()
-            }
+            networkDiagnosticsModel.refresh()
+            localPortsModel.refresh()
         case .ports:
-            switch powerPortSubTab {
-            case .battery: model.refresh(forceBatteryDiagnosticsRefresh: true)
-            case .ports: model.refreshCableMonitor()
-            }
+            model.refresh(forceBatteryDiagnosticsRefresh: true)
+            model.refreshCableMonitor()
         case .peripherals:
             peripheralsModel.refresh()
         case .settings:
@@ -2534,16 +2304,9 @@ private struct DashboardView: View {
         case .storage:
             return "磁盘实时读写速率、NVMe 健康度与挂载卷宗"
         case .traffic:
-            switch networkSubTab {
-            case .traffic: return "按应用进程实时统计上下行速率与累计流量"
-            case .ports: return "本机监听中的 TCP 服务端口、归属应用与快捷管理"
-            case .diagnostics: return "Wi-Fi 信号质量、接口路由配置与实时延迟监控"
-            }
+            return "实时应用流量、Wi-Fi 链路、延迟走势与本机监听端口"
         case .ports:
-            switch powerPortSubTab {
-            case .battery: return "电池健康度、实时功耗拆解与阻止休眠进程检测"
-            case .ports: return "USB-C、雷雳接口连接与充电功率协商"
-            }
+            return "电池健康、实时功耗拆解、USB-C / 雷雳端口与休眠断言"
         case .peripherals:
             return "显示器分辨率/刷新率/HDR 与蓝牙无线外设电量"
         case .settings:

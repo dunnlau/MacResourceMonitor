@@ -6,6 +6,7 @@ struct BatteryDiagnosticsView: View {
     let batteryChargeWatts: Double?
     let systemLoadWatts: Double?
     let powerSource: String
+    var showsSleepAssertions: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceMetrics.sectionSpacing) {
@@ -17,7 +18,7 @@ struct BatteryDiagnosticsView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("当前设备无内置电池")
                             .font(.system(size: 14, weight: .semibold))
-                        Text("桌面端 Mac 仅提供整机供电与阻止休眠进程检测。")
+                        Text("桌面端 Mac 提供外部供电、物理接口与阻止休眠进程检测。")
                             .font(InterfaceTypography.caption)
                             .foregroundStyle(InterfacePalette.textSecondary)
                     }
@@ -27,7 +28,9 @@ struct BatteryDiagnosticsView: View {
                 .stableDashboardCard()
             }
 
-            sleepAssertionsCard
+            if showsSleepAssertions {
+                SleepAssertionsCard(assertions: diagnostics.sleepAssertions)
+            }
         }
     }
 
@@ -275,8 +278,12 @@ struct BatteryDiagnosticsView: View {
         if diagnostics.fullyCharged { return "已充满 · \(powerSource)" }
         return diagnostics.externalConnected ? "外接供电 · \(powerSource)" : "电池供电"
     }
+}
 
-    private var sleepAssertionsCard: some View {
+struct SleepAssertionsCard: View {
+    let assertions: [SleepAssertionItem]
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionCardHeader(
                 title: "阻止休眠进程检测",
@@ -285,13 +292,13 @@ struct BatteryDiagnosticsView: View {
                 tint: InterfacePalette.accent
             ) {
                 StatusBadge(
-                    text: diagnostics.sleepAssertions.isEmpty ? "无阻止项" : "\(diagnostics.sleepAssertions.count) 个活跃项",
-                    tint: diagnostics.sleepAssertions.isEmpty ? InterfacePalette.signal : InterfacePalette.upload,
+                    text: assertions.isEmpty ? "无阻止项" : "\(assertions.count) 个活跃项",
+                    tint: assertions.isEmpty ? InterfacePalette.signal : InterfacePalette.upload,
                     showDot: true
                 )
             }
 
-            if diagnostics.sleepAssertions.isEmpty {
+            if assertions.isEmpty {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 13))
@@ -303,7 +310,7 @@ struct BatteryDiagnosticsView: View {
                 .padding(.vertical, 4)
             } else {
                 VStack(spacing: 4) {
-                    ForEach(Array(diagnostics.sleepAssertions.prefix(12).enumerated()), id: \.element.id) { index, item in
+                    ForEach(Array(assertions.prefix(12).enumerated()), id: \.element.id) { index, item in
                         HStack(spacing: 10) {
                             Text(item.processName)
                                 .font(.system(size: 12.5, weight: .semibold))
@@ -328,7 +335,7 @@ struct BatteryDiagnosticsView: View {
                         .padding(.vertical, 6)
                         .hoverRowHighlight(cornerRadius: 6)
 
-                        if index < min(diagnostics.sleepAssertions.count, 12) - 1 {
+                        if index < min(assertions.count, 12) - 1 {
                             Divider().opacity(0.35)
                         }
                     }

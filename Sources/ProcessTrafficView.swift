@@ -64,7 +64,7 @@ private struct TrafficSortSegmentedControl: View {
     }
 }
 
-struct ProcessTrafficView: View {
+struct ProcessTrafficTableSection: View {
     @ObservedObject var model: ProcessNetworkMonitor
     @State private var searchText = ""
     @State private var sort: ProcessTrafficSort = .current
@@ -89,9 +89,7 @@ struct ProcessTrafficView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InterfaceMetrics.sectionSpacing) {
-            trafficHeroBento
-
+        VStack(alignment: .leading, spacing: 12) {
             if !model.displayState.proxyTunnelNames.isEmpty {
                 proxyTunnelBanner
             }
@@ -99,11 +97,11 @@ struct ProcessTrafficView: View {
             toolbarPanel
 
             if let error = model.errorText {
-                statusCard(symbol: "exclamationmark.triangle.fill", tint: InterfacePalette.upload, title: "暂时无法读取进程流量", detail: error)
+                statusRow(symbol: "exclamationmark.triangle.fill", tint: InterfacePalette.upload, title: "暂时无法读取进程流量", detail: error)
             } else if model.lastUpdatedAt == nil {
-                statusCard(symbol: "network", tint: InterfacePalette.accent, title: "正在采样进程流量", detail: "首次差分采样中（约 0.3 秒）…")
+                statusRow(symbol: "network", tint: InterfacePalette.accent, title: "正在采样进程流量", detail: "首次差分采样中（约 0.3 秒）…")
             } else if visibleRows.isEmpty {
-                statusCard(symbol: "checkmark.circle.fill", tint: InterfacePalette.signal, title: "暂无匹配的进程流量", detail: "尝试清除搜索词或产生一些网络请求")
+                statusRow(symbol: "checkmark.circle.fill", tint: InterfacePalette.signal, title: "暂无匹配的进程流量", detail: "尝试清除搜索词或产生一些网络请求")
             } else {
                 processTable
             }
@@ -117,144 +115,7 @@ struct ProcessTrafficView: View {
                     .foregroundStyle(InterfacePalette.textTertiary)
             }
             .padding(.horizontal, 4)
-            .padding(.top, 2)
         }
-        .onAppear { model.setActive(true, for: .dashboard) }
-        .onDisappear { model.setActive(false, for: .dashboard) }
-    }
-
-    private var trafficHeroBento: some View {
-        HStack(alignment: .top, spacing: InterfaceMetrics.sectionSpacing) {
-            liveRatesHeroCard
-            sessionTotalsHeroCard
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var liveRatesHeroCard: some View {
-        let activeCount = model.rows.filter { $0.currentBytesPerSecond >= 1 }.count
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 7) {
-                StatusBadge(text: "LIVE · NETTOP", tint: InterfacePalette.signal, showDot: true)
-                Text("实时应用速率")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 4)
-                StatusBadge(
-                    text: "\(activeCount) 个活跃进程",
-                    tint: activeCount > 0 ? InterfacePalette.accent : InterfacePalette.textSecondary
-                )
-            }
-
-            HStack(spacing: 10) {
-                rateTile(
-                    title: "应用下载",
-                    value: processTrafficRate(model.downloadBytesPerSecond),
-                    symbol: "arrow.down",
-                    tint: InterfacePalette.download
-                )
-                rateTile(
-                    title: "应用上传",
-                    value: processTrafficRate(model.uploadBytesPerSecond),
-                    symbol: "arrow.up",
-                    tint: InterfacePalette.upload
-                )
-            }
-
-            Spacer(minLength: 0)
-
-            Text(model.filterProxyTunnels ? "已自动剥离代理隧道二次汇总流量" : "包含全部进程（含代理转发）")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(InterfacePalette.textTertiary)
-                .lineLimit(1)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .stableDashboardCard()
-    }
-
-    private func rateTile(title: String, value: String, symbol: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                IconBadge(symbol: symbol, tint: tint, size: 22, iconSize: 10.5, cornerRadius: 5.5)
-                Text(title)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(InterfacePalette.textSecondary)
-            }
-            Text(value)
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(11)
-        .background(
-            InterfacePalette.subtleSurface,
-            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-        )
-    }
-
-    private var sessionTotalsHeroCard: some View {
-        let down = model.sessionDownloadedBytes
-        let up = model.sessionUploadedBytes
-        let total = down + up
-        let downRatio = total > 0 ? Double(down) / Double(total) : 0.5
-
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 7) {
-                IconBadge(symbol: "sum", tint: InterfacePalette.accent, size: 24, iconSize: 11.5, cornerRadius: 6)
-                Text("本次监控累计")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 4)
-                Text(processTrafficBytes(total))
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(.primary)
-            }
-
-            GeometryReader { proxy in
-                let width = proxy.size.width
-                HStack(spacing: 2) {
-                    Capsule()
-                        .fill(InterfacePalette.download)
-                        .frame(width: max(4, width * downRatio))
-                    Capsule()
-                        .fill(InterfacePalette.upload)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .frame(height: 6)
-
-            HStack(spacing: 12) {
-                HStack(spacing: 5) {
-                    Circle().fill(InterfacePalette.download).frame(width: 6, height: 6)
-                    Text("下载 \(processTrafficBytes(down))")
-                        .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(InterfacePalette.textSecondary)
-                }
-                Spacer()
-                HStack(spacing: 5) {
-                    Circle().fill(InterfacePalette.upload).frame(width: 6, height: 6)
-                    Text("上传 \(processTrafficBytes(up))")
-                        .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(InterfacePalette.textSecondary)
-                }
-            }
-
-            Spacer(minLength: 0)
-
-            Text("按进程实时汇总 · 可在右上角清零")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(InterfacePalette.textTertiary)
-                .lineLimit(1)
-        }
-        .padding(16)
-        .frame(width: 320, alignment: .topLeading)
-        .frame(maxHeight: .infinity, alignment: .topLeading)
-        .stableDashboardCard()
     }
 
     private var toolbarPanel: some View {
@@ -262,7 +123,7 @@ struct ProcessTrafficView: View {
             SearchToolbarField(placeholder: "搜索应用、子进程或 PID…", text: $searchText)
 
             ToolbarToggleChip(
-                title: model.filterProxyTunnels ? "已剥离 TUN 代理" : "显示全部进程",
+                title: model.filterProxyTunnels ? "已剥离 TUN" : "显示全部",
                 activeSymbol: "line.3.horizontal.decrease.circle.fill",
                 inactiveSymbol: "line.3.horizontal.decrease.circle",
                 isActive: model.filterProxyTunnels
@@ -277,6 +138,10 @@ struct ProcessTrafficView: View {
             }
 
             TrafficSortSegmentedControl(selection: $sort)
+
+            ActionPillButton(title: "清零累计", symbol: "arrow.counterclockwise") {
+                model.resetSessionTotals()
+            }
         }
     }
 
@@ -287,16 +152,16 @@ struct ProcessTrafficView: View {
         let totalSession = processTrafficBytes(model.displayState.proxyTunnelSessionBytes)
 
         return HStack(spacing: 10) {
-            IconBadge(symbol: "arrow.triangle.branch", tint: InterfacePalette.accent, size: 26, iconSize: 11.5, cornerRadius: 6.5)
+            IconBadge(symbol: "arrow.triangle.branch", tint: InterfacePalette.accent, size: 24, iconSize: 11, cornerRadius: 6)
 
             HStack(spacing: 6) {
                 Text("代理隧道：\(names)")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary)
                 Text("·")
                     .foregroundStyle(InterfacePalette.textTertiary)
                 Text("总转发 ↓ \(down)  ↑ \(up)  累计 \(totalSession)")
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: 11.5, design: .monospaced))
                     .foregroundStyle(InterfacePalette.textSecondary)
             }
             .lineLimit(1)
@@ -304,13 +169,16 @@ struct ProcessTrafficView: View {
             Spacer()
 
             StatusBadge(
-                text: model.filterProxyTunnels ? "已从列表剥离" : "已包含在列表中",
+                text: model.filterProxyTunnels ? "已剥离" : "已包含",
                 tint: model.filterProxyTunnels ? InterfacePalette.signal : InterfacePalette.textSecondary
             )
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .stableDashboardCard()
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            InterfacePalette.subtleSurface,
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+        )
     }
 
     private var processTable: some View {
@@ -329,11 +197,12 @@ struct ProcessTrafficView: View {
             }
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(InterfacePalette.textTertiary)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(InterfacePalette.subtleSurface)
-
-            Divider().opacity(0.45)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(
+                InterfacePalette.subtleSurface,
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
 
             LazyVStack(spacing: 0) {
                 let rows = Array(visibleRows.prefix(80))
@@ -341,13 +210,12 @@ struct ProcessTrafficView: View {
                     processRow(row, rank: index + 1)
                     if index < rows.count - 1 {
                         Divider()
-                            .opacity(0.35)
-                            .padding(.leading, 52)
+                            .opacity(0.32)
+                            .padding(.leading, 48)
                     }
                 }
             }
         }
-        .stableDashboardCard()
     }
 
     private func processRow(_ row: ProcessTrafficRow, rank: Int) -> some View {
@@ -426,9 +294,9 @@ struct ProcessTrafficView: View {
                 .foregroundStyle(InterfacePalette.textSecondary)
                 .frame(width: 100, alignment: .trailing)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .hoverRowHighlight()
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .hoverRowHighlight(cornerRadius: 7)
     }
 
     @ViewBuilder
@@ -453,18 +321,21 @@ struct ProcessTrafficView: View {
         }
     }
 
-    private func statusCard(symbol: String, tint: Color, title: String, detail: String) -> some View {
+    private func statusRow(symbol: String, tint: Color, title: String, detail: String) -> some View {
         HStack(spacing: 12) {
-            IconBadge(symbol: symbol, tint: tint, size: 32, iconSize: 15)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 13.5, weight: .semibold))
+            IconBadge(symbol: symbol, tint: tint, size: 30, iconSize: 14)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 13, weight: .semibold))
                 Text(detail).font(InterfaceTypography.caption).foregroundStyle(InterfacePalette.textSecondary)
             }
             Spacer()
             if model.isCollecting { ProgressView().controlSize(.small) }
         }
-        .padding(18)
-        .stableDashboardCard()
+        .padding(14)
+        .background(
+            InterfacePalette.subtleSurface,
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+        )
     }
 }
 
@@ -479,11 +350,11 @@ private let processTrafficByteFormatter: ByteCountFormatter = {
 }()
 
 @MainActor
-private func processTrafficRate(_ bytesPerSecond: Double) -> String {
+func processTrafficRate(_ bytesPerSecond: Double) -> String {
     "\(processTrafficBytes(UInt64(max(0, bytesPerSecond))))/s"
 }
 
 @MainActor
-private func processTrafficBytes(_ bytes: UInt64) -> String {
+func processTrafficBytes(_ bytes: UInt64) -> String {
     processTrafficByteFormatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
 }
