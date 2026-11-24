@@ -13,16 +13,16 @@
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111111?logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-0A84FF">
-  <img alt="Version" src="https://img.shields.io/badge/version-3.1.0-0A84FF">
+  <img alt="Version" src="https://img.shields.io/badge/version-3.1.1-0A84FF">
   <img alt="CI" src="https://github.com/dunnlau/MacResourceMonitor/actions/workflows/ci.yml/badge.svg">
 </p>
 
-> 当前版本：**3.1.0（Build 57）**
+> 当前版本：**3.1.1（Build 58）**
 
 基于 SwiftUI 的原生仪表盘与菜单栏监控，集中查看系统概览、磁盘存储、网络监控、电源与接口以及显示与外设状态。支持明暗主题，以不同指标色和清晰文字层级呈现数据。
 ## 下载与安装
 
-**[下载 MacResourceMonitor-3.1.0.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v3.1.0/MacResourceMonitor-3.1.0.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
+**[下载 MacResourceMonitor-3.1.1.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v3.1.1/MacResourceMonitor-3.1.1.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
 
 需要 **macOS 26 或更高版本，以及 Apple Silicon 芯片**。不支持 Intel Mac 和旧版 macOS。
 
@@ -35,7 +35,7 @@
 如需校验下载完整性，将同名 `.zip.sha256` 文件下载到相同目录，运行：
 
 ```zsh
-shasum -a 256 -c MacResourceMonitor-3.1.0.zip.sha256
+shasum -a 256 -c MacResourceMonitor-3.1.1.zip.sha256
 ```
 
 ## 功能概览
@@ -63,11 +63,11 @@ shasum -a 256 -c MacResourceMonitor-3.1.0.zip.sha256
 
 进程归属取决于 macOS 暴露的计数器；短连接及暂停采样期间的流量可能遗漏，过滤后的代理数据不能作为完整流量账单。温度、风扇和线缆字段取决于硬件支持。
 
-## 3.1.0 更新
+## 3.1.1 更新
 
-- **全新统一遥测设计系统（`DesignSystem.swift`）**：重构高对比深色 OLED 与浅色视觉体系，支持高负载/高温动态阈值着色、等宽数字排版及全模块统一卡片、徽章与图表组件。
-- **桌面主窗口全面重构**：升级侧边栏分组导航与底部实时状态卡、眉标页头、带实时端点高亮与时间偏移提示的流式面积折线图、进程行内负载微条，以及偏好设置中的顶部菜单栏实时预览。
-- **菜单栏弹窗全面重构**：新增 CPU/内存双核心迷你趋势曲线卡、独立上下行吞吐条、活跃进程带宽微条、语义图标硬件速览条及直达主窗口/设置的快捷操作栏。
+- **严格对齐的 3 行 Bento Grid 概览布局**：移除原先高低错位、与上下列不对齐的 50/50 核心与 GPU 卡片以及重复的「系统环境」卡片，改为等高三卡英雄区 + 等高趋势与硬件区 + 全宽进程表。
+- **全新环形仪表盘组件（`RadialGaugeRing`）**：桌面概览与菜单栏统一引入 280° 圆弧仪表盘，将 Apple Silicon P/E 核柱状矩阵与 GPU/显存统计自然融合进 CPU 与内存主卡。
+- **侧边栏与图表细节打磨**：优化侧边栏选中态胶囊、修复走势图副标题截断，并将硬件与主机环境信息合并去重。
 
 历史版本说明保留在 [GitHub Releases](https://github.com/dunnlau/MacResourceMonitor/releases)。
 
@@ -97,7 +97,7 @@ open "Mac资源监控.app"
 
 ## 版本信息
 
-- App 版本：3.1.0
-- Build：57
+- App 版本：3.1.1
+- Build：58
 - Bundle ID：`io.github.svsvnm.MacResourceMonitor`
 - 构建目标：macOS 26.0+，arm64
