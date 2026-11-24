@@ -129,6 +129,7 @@ typealias CodexQuotaError = AIUsageError
 enum CodexQuotaParser {
     private struct Payload: Decodable {
         let provider: String
+        let source: String?
         let usage: Usage?
         let error: Failure?
     }
@@ -150,6 +151,13 @@ enum CodexQuotaParser {
         let accountEmail: String?
     }
     private struct Failure: Decodable { let message: String? }
+
+    private static let knownAntigravityWindowKeys = [
+        "gemini-5h",
+        "gemini-weekly",
+        "3p-5h",
+        "3p-weekly"
+    ]
 
     static func parse(
         _ data: Data,
@@ -190,17 +198,6 @@ enum CodexQuotaParser {
         guard let usage = payload.usage else {
             throw CodexQuotaError.invalidResponse(expectedProvider)
         }
-        let extraWindows: [AIUsageNamedWindow] = (usage.extraRateWindows ?? []).compactMap { item in
-            guard let window = item.window, window.remainingPercent != nil else { return nil }
-            let id = item.id ?? item.title ?? UUID().uuidString
-            let title = item.title ?? window.periodTitle
-            return AIUsageNamedWindow(id: id, title: title, window: window)
-        }
-        guard usage.primary?.remainingPercent != nil
-                || usage.secondary?.remainingPercent != nil
-                || !extraWindows.isEmpty else {
-            throw CodexQuotaError.invalidResponse(expectedProvider)
-        }
         let rawPlan = usage.identity?.loginMethod ?? usage.loginMethod
         let normalizedPlan: String? = {
             guard let trimmed = rawPlan?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
@@ -208,6 +205,27 @@ enum CodexQuotaParser {
             }
             return trimmed
         }()
+        let isOfflineSource = payload.source?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "offline"
+            || normalizedPlan?.lowercased() == "offline"
+        let extraWindows: [AIUsageNamedWindow] = (usage.extraRateWindows ?? []).compactMap { item in
+            guard let window = item.window, window.remainingPercent != nil else { return nil }
+            let id = item.id ?? item.title ?? UUID().uuidString
+            let title = item.title ?? window.periodTitle
+            return AIUsageNamedWindow(id: id, title: title, window: window)
+        }
+        let hasKnownExtraWindow = extraWindows.contains { item in
+            knownAntigravityWindowKeys.contains { key in
+                item.id.localizedCaseInsensitiveContains(key)
+            }
+        }
+        let hasRenderableQuota = usage.primary?.remainingPercent != nil
+            || usage.secondary?.remainingPercent != nil
+            || hasKnownExtraWindow
+        if isOfflineSource || !hasRenderableQuota {
+            throw isOfflineSource
+                ? CodexQuotaError.notRunning(expectedProvider)
+                : CodexQuotaError.invalidResponse(expectedProvider)
+        }
         let email = usage.accountEmail ?? usage.identity?.accountEmail
         return AIUsageSnapshot(
             provider: expectedProvider,

@@ -88,7 +88,15 @@ struct CodexQuotaTests {
         let proSnapshot = try CodexQuotaParser.parse(proPlanPayload, expectedProvider: .antigravity)
         expect(proSnapshot.plan == "Pro", "Pro plan must not be relabeled as ChatGPT Pro")
         expect(proSnapshot.extraWindow(matching: "gemini-5h")?.remainingPercent == 90, "extraRateWindows-only response must parse")
-        print("Antigravity Parser: valid response, dual pool windows, notRunning, extra-only & plan preservation passed")
+
+        let offlinePayload = Data(#"[{"provider":"antigravity","source":"offline","usage":{"primary":null,"secondary":null,"extraRateWindows":[{"id":"offline-history","title":"History","window":{"usedPercent":0}}],"identity":{"loginMethod":"offline"}}}]"#.utf8)
+        do {
+            _ = try CodexQuotaParser.parse(offlinePayload, expectedProvider: .antigravity)
+            fatalError("offline fallback payload must not be accepted as live quota")
+        } catch {
+            expect(error as? CodexQuotaError == .notRunning(.antigravity), "offline fallback must classify as notRunning")
+        }
+        print("Antigravity Parser: valid response, dual pool windows, notRunning, offline rejection, extra-only & plan preservation passed")
 
         // 3. Single provider lifecycle tests
         let source = ControlledSource(snapshot: snapshot)
