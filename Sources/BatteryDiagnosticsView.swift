@@ -13,7 +13,7 @@ struct BatteryDiagnosticsView: View {
                 HStack(spacing: 12) {
                     metricCard(
                         title: "电池健康度",
-                        value: diagnostics.healthPercent.map { String(format: "%.1f%%", $0) } ?? "--",
+                        value: formattedHealthPercent,
                         detail: capacityDetail,
                         symbol: "heart.fill",
                         tint: healthTint
@@ -57,6 +57,14 @@ struct BatteryDiagnosticsView: View {
         }
     }
 
+    private var formattedHealthPercent: String {
+        guard let health = diagnostics.healthPercent else { return "--" }
+        if abs(health.rounded() - health) < 0.05 {
+            return String(format: "%.0f%%", health)
+        }
+        return String(format: "%.1f%%", health)
+    }
+
     private var healthTint: Color {
         guard let health = diagnostics.healthPercent else { return InterfacePalette.textSecondary }
         if health < 80 { return InterfacePalette.temperature }
@@ -66,10 +74,11 @@ struct BatteryDiagnosticsView: View {
 
     private var capacityDetail: String {
         if let maxCap = diagnostics.maxCapacityMAh, let designCap = diagnostics.designCapacityMAh {
+            let rawSuffix = diagnostics.rawHealthPercent.map { String(format: " (%.1f%%)", $0) } ?? ""
             if let condition = diagnostics.batteryCondition {
-                return "\(condition) · \(maxCap) / \(designCap) mAh"
+                return "\(condition) · 原始 \(maxCap)/\(designCap) mAh\(rawSuffix)"
             }
-            return "\(maxCap) / \(designCap) mAh"
+            return "原始 \(maxCap)/\(designCap) mAh\(rawSuffix)"
         }
         if let condition = diagnostics.batteryCondition {
             return "电池状态：\(condition)"

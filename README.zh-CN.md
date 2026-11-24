@@ -13,16 +13,16 @@
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111111?logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-0A84FF">
-  <img alt="Version" src="https://img.shields.io/badge/version-3.0.1-0A84FF">
+  <img alt="Version" src="https://img.shields.io/badge/version-3.0.2-0A84FF">
   <img alt="CI" src="https://github.com/dunnlau/MacResourceMonitor/actions/workflows/ci.yml/badge.svg">
 </p>
 
-> 当前版本：**3.0.1（Build 55）**
+> 当前版本：**3.0.2（Build 56）**
 
 基于 SwiftUI 的原生仪表盘与菜单栏监控，集中查看系统概览、磁盘存储、网络监控、电源与接口以及显示与外设状态。支持明暗主题，以不同指标色和清晰文字层级呈现数据。
 ## 下载与安装
 
-**[下载 MacResourceMonitor-3.0.1.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v3.0.1/MacResourceMonitor-3.0.1.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
+**[下载 MacResourceMonitor-3.0.2.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v3.0.2/MacResourceMonitor-3.0.2.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
 
 需要 **macOS 26 或更高版本，以及 Apple Silicon 芯片**。不支持 Intel Mac 和旧版 macOS。
 
@@ -35,7 +35,7 @@
 如需校验下载完整性，将同名 `.zip.sha256` 文件下载到相同目录，运行：
 
 ```zsh
-shasum -a 256 -c MacResourceMonitor-3.0.1.zip.sha256
+shasum -a 256 -c MacResourceMonitor-3.0.2.zip.sha256
 ```
 
 ## 功能概览
@@ -63,11 +63,9 @@ shasum -a 256 -c MacResourceMonitor-3.0.1.zip.sha256
 
 进程归属取决于 macOS 暴露的计数器；短连接及暂停采样期间的流量可能遗漏，过滤后的代理数据不能作为完整流量账单。温度、风扇和线缆字段取决于硬件支持。
 
-## 3.0.1 更新
+## 3.0.2 更新
 
-- **侧边栏布局与命名优化**：将「磁盘存储」与「显示与外设」提升为独立侧边栏，将「电池能耗」置于「电源与接口」的「接口线缆」之前（并作为默认首屏），统一精炼菜单命名（系统概览 / 磁盘存储 / 网络监控 / 电源与接口 / 显示与外设 / 偏好设置）。
-- **修复电池健康度与电芯温度读取**：兼容 `AppleSmartBattery` 的嵌套 `BatteryData` 字典与 0.01K 温度换算，新增 `system_profiler SPPowerDataType` 官方健康度/电池状态兜底与 SMC `TB0T/TB1T/TB2T` 电池温度兜底；电池供电时显示实时放电功率，并去除阻止休眠列表中 PID 的千位逗号。
-- **补全网络 IPv6 信息**：在「网络监控 → 网络诊断」中展示本机 IPv6 地址（优先公网地址并兼容链路本地地址）与 IPv6 网关，支持直接选中复制。
+- **对齐系统电池健康度口径**：电池健康度主数值优先显示 macOS 官方最大容量（`system_profiler SPPowerDataType`），与系统设置/系统信息 100% 一致；副标题同时保留原始化学满充容量 `mAh` 及原始百分比供参考。
 
 历史版本说明保留在 [GitHub Releases](https://github.com/dunnlau/MacResourceMonitor/releases)。
 
@@ -97,7 +95,7 @@ open "Mac资源监控.app"
 
 ## 版本信息
 
-- App 版本：3.0.1
-- Build：55
+- App 版本：3.0.2
+- Build：56
 - Bundle ID：`io.github.svsvnm.MacResourceMonitor`
 - 构建目标：macOS 26.0+，arm64

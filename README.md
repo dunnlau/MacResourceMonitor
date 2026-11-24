@@ -13,16 +13,16 @@
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111111?logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-0A84FF">
-  <img alt="Version" src="https://img.shields.io/badge/version-3.0.1-0A84FF">
+  <img alt="Version" src="https://img.shields.io/badge/version-3.0.2-0A84FF">
   <img alt="CI" src="https://github.com/dunnlau/MacResourceMonitor/actions/workflows/ci.yml/badge.svg">
 </p>
 
-> Current version: **3.0.1 (Build 55)**
+> Current version: **3.0.2 (Build 56)**
 
 A native SwiftUI dashboard and menu bar monitor for system resources, disk storage, per-process network traffic, local listening ports, Wi-Fi diagnostics, battery health, hardware ports, and peripherals. Light and dark appearances use distinct metric colors and clear text hierarchy.
 ## Download and Install
 
-**[Download MacResourceMonitor-3.0.1.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v3.0.1/MacResourceMonitor-3.0.1.zip)** · [Release notes and checksums](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
+**[Download MacResourceMonitor-3.0.2.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v3.0.2/MacResourceMonitor-3.0.2.zip)** · [Release notes and checksums](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
 
 Requires **macOS 26 or later and Apple Silicon**. Intel Macs and earlier macOS versions are not supported.
 
@@ -35,7 +35,7 @@ The app is ad-hoc signed, not Apple Developer ID signed or notarized. If macOS b
 For an integrity check, download the matching `.zip.sha256` file into the same directory and run:
 
 ```zsh
-shasum -a 256 -c MacResourceMonitor-3.0.1.zip.sha256
+shasum -a 256 -c MacResourceMonitor-3.0.2.zip.sha256
 ```
 
 ## Features
@@ -63,11 +63,9 @@ The menu bar popover provides an at-a-glance view of core system load, **top thr
 
 Process attribution depends on the counters macOS exposes. Short-lived connections and traffic while sampling is paused may be missed; filtered proxy totals are not a full accounting of all traffic. Sensor and cable fields depend on hardware support.
 
-## What's New in 3.0.1
+## What's New in 3.0.2
 
-- **Refined Sidebar Layout**: Promote **Disk Storage** and **Displays & Peripherals** to standalone sidebar items, move **Battery & Power** ahead of **Ports & Cables** under **Power & Ports**, and polish all sidebar menu names.
-- **Battery Health & Cell Temperature Fixes**: Read nested `BatteryData` capacity/temperature fields, normalize centikelvin readings, add `system_profiler SPPowerDataType` health/condition fallback and SMC `TB0T/TB1T/TB2T` temperature fallback, show live battery discharge watts on battery power, and remove thousands commas from PID labels.
-- **IPv6 Network Info**: Display local IPv6 address (preferring global unicast over link-local) and IPv6 gateway in **Network Monitor → Network Diagnostics**, with selectable text for easy copying.
+- **Align Battery Health with macOS System Settings**: Prioritize macOS official `Maximum Capacity` (`system_profiler SPPowerDataType`) as the primary Battery Health metric while displaying raw `AppleRawMaxCapacity / DesignCapacity` mAh and percentage in the subtitle for reference.
 
 Older release notes remain in [GitHub Releases](https://github.com/dunnlau/MacResourceMonitor/releases).
 
@@ -97,7 +95,7 @@ See [third-party notices](THIRD_PARTY_NOTICES.md) for attribution and license te
 
 ## Version
 
-- App version: 3.0.1
-- Build: 55
+- App version: 3.0.2
+- Build: 56
 - Bundle ID: `io.github.svsvnm.MacResourceMonitor`
 - Target: macOS 26.0+, arm64
