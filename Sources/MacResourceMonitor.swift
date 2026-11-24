@@ -308,7 +308,8 @@ private enum ResourceMonitorConsumer: Hashable {
     case cable
 }
 
-private final class SystemCollector {
+/// Accessed exclusively on `MonitorModel`'s serial collector queue.
+private final class SystemCollector: @unchecked Sendable {
     private var cachedSnapshot = ResourceSnapshot()
     private var previousCPUTicks: (user: UInt64, system: UInt64, idle: UInt64, nice: UInt64)?
     private var previousNetwork: (interface: String, received: UInt64, sent: UInt64, date: Date)?
