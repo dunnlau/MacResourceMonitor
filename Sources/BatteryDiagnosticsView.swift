@@ -6,53 +6,243 @@ struct BatteryDiagnosticsView: View {
     let batteryChargeWatts: Double?
     let systemLoadWatts: Double?
     let powerSource: String
+    var showsSleepAssertions: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceMetrics.sectionSpacing) {
             if diagnostics.hasBattery {
-                HStack(spacing: 12) {
-                    MetricSummaryCard(
-                        title: "电池健康度",
-                        value: formattedHealthPercent,
-                        detail: capacityDetail,
-                        symbol: "heart.fill",
-                        tint: healthTint,
-                        progress: diagnostics.healthPercent
-                    )
-                    MetricSummaryCard(
-                        title: "循环次数",
-                        value: diagnostics.cycleCount.map { "\($0) 次" } ?? "--",
-                        detail: chargeStatusDetail,
-                        symbol: "arrow.triangle.2.circlepath",
-                        tint: InterfacePalette.accent
-                    )
-                    MetricSummaryCard(
-                        title: "电芯温度与电压",
-                        value: diagnostics.temperatureCelsius.map { String(format: "%.1f°C", $0) } ?? "--",
-                        detail: electricalDetail,
-                        symbol: "thermometer.medium",
-                        tint: InterfacePalette.power
-                    )
-                }
-
-                powerBreakdownCard
+                batteryHeroBento
             } else {
                 HStack(spacing: 12) {
                     IconBadge(symbol: "desktopcomputer", tint: InterfacePalette.textSecondary, size: 32, iconSize: 15)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("当前设备无内置电池")
                             .font(.system(size: 14, weight: .semibold))
-                        Text("桌面端 Mac 仅提供整机供电与阻止休眠进程检测。")
+                        Text("桌面端 Mac 提供外部供电、物理接口与阻止休眠进程检测。")
                             .font(InterfaceTypography.caption)
                             .foregroundStyle(InterfacePalette.textSecondary)
                     }
                     Spacer()
                 }
-                .padding(InterfaceMetrics.cardPadding)
+                .padding(18)
                 .stableDashboardCard()
             }
 
-            sleepAssertionsCard
+            if showsSleepAssertions {
+                SleepAssertionsCard(assertions: diagnostics.sleepAssertions)
+            }
+        }
+    }
+
+    private var batteryHeroBento: some View {
+        HStack(alignment: .top, spacing: InterfaceMetrics.sectionSpacing) {
+            batteryHealthHeroCard
+            batteryChargeHeroCard
+            powerFlowPulseCard
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var batteryHealthHeroCard: some View {
+        let healthValue = diagnostics.healthPercent ?? 0
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
+                IconBadge(symbol: "heart.fill", tint: healthTint, size: 24, iconSize: 11.5, cornerRadius: 6)
+                Text("电池健康")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 4)
+                if let condition = diagnostics.batteryCondition {
+                    StatusBadge(text: condition, tint: healthTint)
+                }
+            }
+
+            HStack(alignment: .center, spacing: 14) {
+                RadialGaugeRing(
+                    progress: healthValue,
+                    tint: healthTint,
+                    valueText: formattedHealthPercent,
+                    caption: "HEALTH",
+                    size: 74,
+                    lineWidth: 6.5
+                )
+
+                VStack(alignment: .leading, spacing: 6) {
+                    inlineStat("循环次数", diagnostics.cycleCount.map { "\($0) 次" } ?? "--", tint: .primary)
+                    inlineStat(
+                        "满充容量",
+                        diagnostics.maxCapacityMAh.map { "\($0) mAh" } ?? "--",
+                        tint: InterfacePalette.textSecondary
+                    )
+                    inlineStat(
+                        "设计容量",
+                        diagnostics.designCapacityMAh.map { "\($0) mAh" } ?? "--",
+                        tint: InterfacePalette.textTertiary
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Spacer(minLength: 0)
+
+            Text(rawHealthFootnote)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(InterfacePalette.textTertiary)
+                .lineLimit(1)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .stableDashboardCard()
+    }
+
+    private var batteryChargeHeroCard: some View {
+        let chargePercent = Double(diagnostics.currentChargePercent ?? 0)
+        let chargeTint: Color = chargePercent <= 15
+            ? InterfacePalette.temperature
+            : (chargePercent <= 30 ? InterfacePalette.upload : InterfacePalette.battery)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
+                IconBadge(symbol: "battery.75percent", tint: chargeTint, size: 24, iconSize: 11.5, cornerRadius: 6)
+                Text("电量与电芯")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 4)
+                StatusBadge(
+                    text: diagnostics.isCharging ? "充电中" : (diagnostics.fullyCharged ? "已充满" : "使用中"),
+                    tint: diagnostics.isCharging ? InterfacePalette.power : chargeTint,
+                    showDot: diagnostics.isCharging
+                )
+            }
+
+            HStack(alignment: .center, spacing: 14) {
+                RadialGaugeRing(
+                    progress: chargePercent,
+                    tint: chargeTint,
+                    valueText: diagnostics.currentChargePercent.map { "\($0)%" } ?? "--",
+                    caption: "LEVEL",
+                    size: 74,
+                    lineWidth: 6.5
+                )
+
+                VStack(alignment: .leading, spacing: 6) {
+                    inlineStat(
+                        "电芯温度",
+                        diagnostics.temperatureCelsius.map { String(format: "%.1f°C", $0) } ?? "--",
+                        tint: InterfacePalette.temperatureTint(for: diagnostics.temperatureCelsius)
+                    )
+                    inlineStat(
+                        "实时电压",
+                        diagnostics.voltageVolts.map { String(format: "%.2f V", $0) } ?? "--",
+                        tint: .primary
+                    )
+                    inlineStat(
+                        "实时电流",
+                        diagnostics.amperageAmps.map { String(format: "%+.2f A", $0) } ?? "--",
+                        tint: InterfacePalette.textSecondary
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Spacer(minLength: 0)
+
+            Text(chargeStatusDetail)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(InterfacePalette.textTertiary)
+                .lineLimit(1)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .stableDashboardCard()
+    }
+
+    private var powerFlowPulseCard: some View {
+        let isDischarging = !diagnostics.isCharging && diagnostics.dischargeWatts != nil
+        let batteryFlowTitle = isDischarging ? "电池放电" : "电池充电"
+        let batteryFlowValue: String = {
+            if let watts = batteryChargeWatts {
+                return String(format: "%.1f W", watts)
+            }
+            if let discharge = diagnostics.dischargeWatts {
+                return String(format: "%.1f W", discharge)
+            }
+            return diagnostics.isCharging ? "检测中" : "未充电"
+        }()
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
+                StatusBadge(text: "实时功耗", tint: InterfacePalette.power, showDot: true)
+                Spacer(minLength: 4)
+                if let adapterWatts = diagnostics.adapterWatts {
+                    StatusBadge(text: "适配器 \(adapterWatts) W", tint: InterfacePalette.textSecondary)
+                } else {
+                    Text(powerSource)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(InterfacePalette.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+
+            VStack(spacing: 7) {
+                powerRow(
+                    title: "外部输入",
+                    value: inputWatts.map { String(format: "%.1f W", $0) } ?? "未接入",
+                    symbol: "powerplug.fill",
+                    tint: InterfacePalette.power
+                )
+                powerRow(
+                    title: batteryFlowTitle,
+                    value: batteryFlowValue,
+                    symbol: isDischarging ? "arrow.down.circle.fill" : "bolt.fill",
+                    tint: isDischarging ? InterfacePalette.upload : InterfacePalette.battery
+                )
+                powerRow(
+                    title: "整机负载",
+                    value: systemLoadWatts.map { String(format: "%.1f W", $0) } ?? "--",
+                    symbol: "gauge.with.dots.needle.50percent",
+                    tint: InterfacePalette.accent
+                )
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(width: 320, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .stableDashboardCard()
+    }
+
+    private func powerRow(title: String, value: String, symbol: String, tint: Color) -> some View {
+        HStack(spacing: 9) {
+            IconBadge(symbol: symbol, tint: tint, size: 22, iconSize: 10.5, cornerRadius: 5.5)
+            Text(title)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(InterfacePalette.textSecondary)
+            Spacer(minLength: 6)
+            Text(value)
+                .font(.system(size: 13.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            InterfacePalette.subtleSurface,
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+    }
+
+    private func inlineStat(_ title: String, _ value: String, tint: Color) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(InterfacePalette.textTertiary)
+            Spacer(minLength: 4)
+            Text(value)
+                .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(tint)
+                .lineLimit(1)
         }
     }
 
@@ -71,18 +261,11 @@ struct BatteryDiagnosticsView: View {
         return InterfacePalette.battery
     }
 
-    private var capacityDetail: String {
-        if let maxCap = diagnostics.maxCapacityMAh, let designCap = diagnostics.designCapacityMAh {
-            let rawSuffix = diagnostics.rawHealthPercent.map { String(format: " (%.1f%%)", $0) } ?? ""
-            if let condition = diagnostics.batteryCondition {
-                return "\(condition) · 原始 \(maxCap)/\(designCap) mAh\(rawSuffix)"
-            }
-            return "原始 \(maxCap)/\(designCap) mAh\(rawSuffix)"
+    private var rawHealthFootnote: String {
+        if let raw = diagnostics.rawHealthPercent {
+            return String(format: "系统最大容量 · 化学容量占比 %.1f%%", raw)
         }
-        if let condition = diagnostics.batteryCondition {
-            return "电池状态：\(condition)"
-        }
-        return "系统最大容量"
+        return "系统最大容量（对齐 macOS 设置）"
     }
 
     private var chargeStatusDetail: String {
@@ -95,94 +278,12 @@ struct BatteryDiagnosticsView: View {
         if diagnostics.fullyCharged { return "已充满 · \(powerSource)" }
         return diagnostics.externalConnected ? "外接供电 · \(powerSource)" : "电池供电"
     }
+}
 
-    private var electricalDetail: String {
-        var parts: [String] = []
-        if let volts = diagnostics.voltageVolts {
-            parts.append(String(format: "%.2f V", volts))
-        }
-        if let amps = diagnostics.amperageAmps {
-            parts.append(String(format: "%+.2f A", amps))
-        }
-        return parts.isEmpty ? "正在读取电芯参数" : parts.joined(separator: " · ")
-    }
+struct SleepAssertionsCard: View {
+    let assertions: [SleepAssertionItem]
 
-    private var powerBreakdownCard: some View {
-        let isDischarging = !diagnostics.isCharging && diagnostics.dischargeWatts != nil
-        let batteryFlowTitle = isDischarging ? "电池放电功率" : "电池充电功率"
-        let batteryFlowValue: String = {
-            if let watts = batteryChargeWatts {
-                return String(format: "%.1f W", watts)
-            }
-            if let discharge = diagnostics.dischargeWatts {
-                return String(format: "%.1f W", discharge)
-            }
-            return diagnostics.isCharging ? "检测中" : "未充电"
-        }()
-
-        return VStack(alignment: .leading, spacing: 14) {
-            SectionCardHeader(
-                title: "实时功耗拆解",
-                subtitle: "外部适配器输入、电池充放电与整机负载",
-                symbol: "bolt.batteryblock.fill",
-                tint: InterfacePalette.power
-            ) {
-                if let adapterWatts = diagnostics.adapterWatts {
-                    StatusBadge(text: "适配器额定 \(adapterWatts) W", tint: InterfacePalette.power)
-                }
-            }
-
-            HStack(spacing: 10) {
-                powerItem(
-                    title: "外部输入功率",
-                    value: inputWatts.map { String(format: "%.1f W", $0) } ?? "未接入",
-                    tint: InterfacePalette.power
-                )
-                powerItem(
-                    title: batteryFlowTitle,
-                    value: batteryFlowValue,
-                    tint: isDischarging ? InterfacePalette.upload : InterfacePalette.battery
-                )
-                powerItem(
-                    title: "整机实时负载",
-                    value: systemLoadWatts.map { String(format: "%.1f W", $0) } ?? "--",
-                    tint: InterfacePalette.accent
-                )
-                powerItem(
-                    title: "当前电量",
-                    value: diagnostics.currentChargePercent.map { "\($0)%" } ?? "--",
-                    tint: InterfacePalette.textSecondary
-                )
-            }
-        }
-        .padding(InterfaceMetrics.cardPadding)
-        .stableDashboardCard()
-    }
-
-    private func powerItem(title: String, value: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(InterfacePalette.textTertiary)
-            Text(value)
-                .font(.system(size: 16, weight: .bold, design: .monospaced))
-                .foregroundStyle(tint == InterfacePalette.textSecondary ? Color.primary : tint)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(
-            InterfacePalette.subtleSurface,
-            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .stroke(InterfacePalette.cardStroke, lineWidth: 0.65)
-        )
-    }
-
-    private var sleepAssertionsCard: some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionCardHeader(
                 title: "阻止休眠进程检测",
@@ -191,13 +292,13 @@ struct BatteryDiagnosticsView: View {
                 tint: InterfacePalette.accent
             ) {
                 StatusBadge(
-                    text: diagnostics.sleepAssertions.isEmpty ? "无阻止项" : "\(diagnostics.sleepAssertions.count) 个活跃项",
-                    tint: diagnostics.sleepAssertions.isEmpty ? InterfacePalette.signal : InterfacePalette.upload,
+                    text: assertions.isEmpty ? "无阻止项" : "\(assertions.count) 个活跃项",
+                    tint: assertions.isEmpty ? InterfacePalette.signal : InterfacePalette.upload,
                     showDot: true
                 )
             }
 
-            if diagnostics.sleepAssertions.isEmpty {
+            if assertions.isEmpty {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 13))
@@ -209,7 +310,7 @@ struct BatteryDiagnosticsView: View {
                 .padding(.vertical, 4)
             } else {
                 VStack(spacing: 4) {
-                    ForEach(Array(diagnostics.sleepAssertions.prefix(12).enumerated()), id: \.element.id) { index, item in
+                    ForEach(Array(assertions.prefix(12).enumerated()), id: \.element.id) { index, item in
                         HStack(spacing: 10) {
                             Text(item.processName)
                                 .font(.system(size: 12.5, weight: .semibold))
@@ -234,14 +335,14 @@ struct BatteryDiagnosticsView: View {
                         .padding(.vertical, 6)
                         .hoverRowHighlight(cornerRadius: 6)
 
-                        if index < min(diagnostics.sleepAssertions.count, 12) - 1 {
+                        if index < min(assertions.count, 12) - 1 {
                             Divider().opacity(0.35)
                         }
                     }
                 }
             }
         }
-        .padding(InterfaceMetrics.cardPadding)
+        .padding(18)
         .stableDashboardCard()
     }
 }

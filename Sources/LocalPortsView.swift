@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-struct LocalPortsView: View {
+struct LocalPortsTableSection: View {
     @ObservedObject var model: LocalPortsMonitor
     @State private var searchText = ""
     @State private var loopbackOnly = false
@@ -22,64 +22,50 @@ struct LocalPortsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InterfaceMetrics.sectionSpacing) {
-            HStack(spacing: 12) {
-                MetricSummaryCard(
-                    title: "监听端口总数",
-                    value: "\(model.snapshot.entries.count)",
-                    detail: "当前用户 TCP LISTEN 端口",
-                    symbol: "network",
-                    tint: InterfacePalette.accent
-                )
-                MetricSummaryCard(
-                    title: "仅本机回环",
-                    value: "\(model.snapshot.entries.filter(\.isLoopbackOnly).count)",
-                    detail: "127.0.0.1 / ::1 本地服务",
-                    symbol: "lock.shield.fill",
-                    tint: InterfacePalette.signal
-                )
-                MetricSummaryCard(
-                    title: "对外网卡开放",
-                    value: "\(model.snapshot.entries.filter { !$0.isLoopbackOnly }.count)",
-                    detail: "监听 0.0.0.0 / * / 局域网地址",
-                    symbol: "globe",
-                    tint: InterfacePalette.upload
-                )
-            }
+        let total = model.snapshot.entries.count
+        let loopbackCount = model.snapshot.entries.filter(\.isLoopbackOnly).count
+        let externalCount = total - loopbackCount
 
-            toolbar
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                SearchToolbarField(placeholder: "搜索端口号、应用名、地址或 PID…", text: $searchText)
 
-            if let error = model.snapshot.errorText {
-                statusCard(symbol: "exclamationmark.triangle.fill", tint: InterfacePalette.upload, title: "暂时无法扫描本地端口", detail: error)
-            } else if model.snapshot.updatedAt == nil {
-                statusCard(symbol: "network", tint: InterfacePalette.accent, title: "正在扫描本机监听端口…", detail: "只读检测当前用户进程")
-            } else if filteredEntries.isEmpty {
-                statusCard(symbol: "checkmark.circle.fill", tint: InterfacePalette.signal, title: "暂无匹配的监听端口", detail: "尝试清除搜索词或启动本地开发服务")
-            } else {
-                portsTable
-            }
-        }
-        .onAppear { model.setActive(true) }
-        .onDisappear { model.setActive(false) }
-    }
-
-    private var toolbar: some View {
-        HStack(spacing: 10) {
-            SearchToolbarField(placeholder: "搜索端口号、应用名、地址或 PID…", text: $searchText)
-
-            ToolbarToggleChip(
-                title: "仅看本机回环",
-                activeSymbol: "checkmark.circle.fill",
-                inactiveSymbol: "circle",
-                isActive: loopbackOnly
-            ) {
-                if reduceMotion {
-                    loopbackOnly.toggle()
-                } else {
-                    withAnimation(.easeInOut(duration: 0.15)) {
+                ToolbarToggleChip(
+                    title: "仅本机回环 (\(loopbackCount))",
+                    activeSymbol: "checkmark.circle.fill",
+                    inactiveSymbol: "circle",
+                    isActive: loopbackOnly
+                ) {
+                    if reduceMotion {
                         loopbackOnly.toggle()
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            loopbackOnly.toggle()
+                        }
                     }
                 }
+
+                if externalCount > 0 {
+                    StatusBadge(text: "对外开放 \(externalCount)", tint: InterfacePalette.upload, showDot: true)
+                }
+
+                ActionPillButton(
+                    title: model.isRefreshing ? "扫描中" : "重新扫描",
+                    symbol: "arrow.clockwise",
+                    isDisabled: model.isRefreshing
+                ) {
+                    model.refresh()
+                }
+            }
+
+            if let error = model.snapshot.errorText {
+                statusRow(symbol: "exclamationmark.triangle.fill", tint: InterfacePalette.upload, title: "暂时无法扫描本地端口", detail: error)
+            } else if model.snapshot.updatedAt == nil {
+                statusRow(symbol: "network", tint: InterfacePalette.accent, title: "正在扫描本机监听端口…", detail: "只读检测当前用户进程")
+            } else if filteredEntries.isEmpty {
+                statusRow(symbol: "checkmark.circle.fill", tint: InterfacePalette.signal, title: "暂无匹配的监听端口", detail: "尝试清除搜索词或启动本地开发服务")
+            } else {
+                portsTable
             }
         }
     }
@@ -98,24 +84,24 @@ struct LocalPortsView: View {
             }
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(InterfacePalette.textTertiary)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(InterfacePalette.subtleSurface)
-
-            Divider().opacity(0.45)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(
+                InterfacePalette.subtleSurface,
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
 
             LazyVStack(spacing: 0) {
                 ForEach(Array(filteredEntries.enumerated()), id: \.element.id) { index, entry in
                     portRow(entry)
                     if index < filteredEntries.count - 1 {
                         Divider()
-                            .opacity(0.35)
-                            .padding(.leading, 16)
+                            .opacity(0.32)
+                            .padding(.leading, 12)
                     }
                 }
             }
         }
-        .stableDashboardCard()
     }
 
     private func portRow(_ entry: LocalPortEntry) -> some View {
@@ -226,9 +212,9 @@ struct LocalPortsView: View {
             }
             .frame(width: 96, alignment: .trailing)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .hoverRowHighlight()
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .hoverRowHighlight(cornerRadius: 7)
     }
 
     @ViewBuilder
@@ -261,17 +247,20 @@ struct LocalPortsView: View {
         }
     }
 
-    private func statusCard(symbol: String, tint: Color, title: String, detail: String) -> some View {
+    private func statusRow(symbol: String, tint: Color, title: String, detail: String) -> some View {
         HStack(spacing: 12) {
-            IconBadge(symbol: symbol, tint: tint, size: 32, iconSize: 15)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 13.5, weight: .semibold))
+            IconBadge(symbol: symbol, tint: tint, size: 30, iconSize: 14)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 13, weight: .semibold))
                 Text(detail).font(InterfaceTypography.caption).foregroundStyle(InterfacePalette.textSecondary)
             }
             Spacer()
             if model.isRefreshing { ProgressView().controlSize(.small) }
         }
-        .padding(18)
-        .stableDashboardCard()
+        .padding(14)
+        .background(
+            InterfacePalette.subtleSurface,
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+        )
     }
 }
