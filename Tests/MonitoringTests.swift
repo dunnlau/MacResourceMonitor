@@ -81,5 +81,28 @@ struct MonitoringTests {
         model.apply(sample(24000))
         expect(model.errorText == nil && model.rows.first!.currentBytesPerSecond > 0, "successful sample recovers")
         print("Process traffic: failure, filter changes, cumulative retention, recovery passed")
+
+        expect(StorageMetricsMath.rate(previousBytes: 1000, currentBytes: 3000, elapsedSeconds: 2.0) == 1000.0, "storage rate diff")
+        expect(StorageMetricsMath.rate(previousBytes: 3000, currentBytes: 1000, elapsedSeconds: 2.0) == 0.0, "storage rate underflow guard")
+        expect(StorageMetricsMath.purgeableBytes(importantAvailable: 10_000, standardAvailable: 6_000) == 4_000, "purgeable space diff")
+        expect(StorageMetricsMath.purgeableBytes(importantAvailable: 5_000, standardAvailable: 6_000) == 0, "purgeable non-negative")
+
+        let health = BatteryDiagnosticsParser.computeHealthPercent(maxCapacityMAh: 4500, designCapacityMAh: 5000)
+        expect(health == 90.0, "battery health percentage")
+        expect(BatteryDiagnosticsParser.computeHealthPercent(maxCapacityMAh: 5200, designCapacityMAh: 5000) == 100.0, "battery health clamped to 100")
+
+        let sampleAssertions = """
+        Assertion status system-wide:
+           PreventUserIdleSystemSleep             1
+        Listed by owning process:
+           pid 412(caffeinate): [0x00000123000180ab] 00:12:34 PreventUserIdleSystemSleep named: "caffeinate command-line tool"
+           pid 901(Chrome): [0x00000123000180ac] 00:05:10 PreventUserIdleDisplaySleep named: "Playing video"
+           pid 100(powerd): [0x00000123000180ad] 00:01:00 BackgroundTask named: "Ignore me"
+        """
+        let parsedAssertions = BatteryDiagnosticsParser.parseSleepAssertions(sampleAssertions)
+        expect(parsedAssertions.count == 2, "only sleep-preventing assertions parsed")
+        expect(parsedAssertions[0].pid == 412 && parsedAssertions[0].processName == "caffeinate", "first assertion parsed")
+        expect(parsedAssertions[1].pid == 901 && parsedAssertions[1].reason == "Playing video", "second assertion reason parsed")
+        print("Storage & Battery diagnostics: rate math, purgeable bytes, health, sleep assertions passed")
     }
 }
