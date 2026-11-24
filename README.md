@@ -13,16 +13,16 @@
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111111?logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-0A84FF">
-  <img alt="Version" src="https://img.shields.io/badge/version-2.8.4-0A84FF">
+  <img alt="Version" src="https://img.shields.io/badge/version-2.8.5-0A84FF">
   <img alt="CI" src="https://github.com/dunnlau/MacResourceMonitor/actions/workflows/ci.yml/badge.svg">
 </p>
 
-> Current version: **2.8.4 (Build 51)**
+> Current version: **2.8.5 (Build 52)**
 
 A native SwiftUI dashboard and menu bar monitor for system resources, per-process network traffic, Antigravity subscription quotas, and USB-C / Thunderbolt diagnostics. Light and dark appearances use distinct metric colors and clear text hierarchy.
 ## Download and Install
 
-**[Download MacResourceMonitor-2.8.4.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v2.8.4/MacResourceMonitor-2.8.4.zip)** · [Release notes and checksums](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
+**[Download MacResourceMonitor-2.8.5.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v2.8.5/MacResourceMonitor-2.8.5.zip)** · [Release notes and checksums](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
 
 Requires **macOS 26 or later and Apple Silicon**. Intel Macs and earlier macOS versions are not supported.
 
@@ -35,7 +35,7 @@ The app is ad-hoc signed, not Apple Developer ID signed or notarized. If macOS b
 For an integrity check, download the matching `.zip.sha256` file into the same directory and run:
 
 ```zsh
-shasum -a 256 -c MacResourceMonitor-2.8.4.zip.sha256
+shasum -a 256 -c MacResourceMonitor-2.8.5.zip.sha256
 ```
 
 ## Features
@@ -59,15 +59,14 @@ The menu bar popover provides an at-a-glance view of core system load, **top thr
 
 - All hardware, process, and port metrics are processed locally in memory without uploading app telemetry and no kernel extensions, VPNs, or privileged daemons.
 - Process traffic uses read-only byte counters from macOS `nettop` without inspecting domains, packet payloads, or connection contents.
-- AI quota integration queries remaining subscription percentages via the bundled read-only **CodexBar CLI v0.56.5** without reading chat transcripts, importing browser cookies, or scanning billing history.
+- AI quota integration queries remaining subscription percentages via the bundled read-only **CodexBar CLI v0.85.0** without reading chat transcripts, importing browser cookies, or scanning billing history.
 
 Process attribution depends on the counters macOS exposes. Short-lived connections and traffic while sampling is paused may be missed; filtered proxy totals are not a full accounting of all traffic. Sensor and cable fields depend on hardware support.
 
-## What's New in 2.8.4
+## What's New in 2.8.5
 
-- Harden concurrency and lifecycle management: migrate app models to `@StateObject` and `@MainActor`, move blocking quota subprocess reads off Swift Concurrency's cooperative thread pool, and add failure backoff for `nettop` sampling.
-- Improve subprocess reliability and accuracy: fix pipe descriptor cleanup, prevent >512KB output truncation, fix `proc_listchildpids` byte-count conversion, tighten proxy tunnel classification, and align memory usage accounting with macOS Activity Monitor.
-- Fix Antigravity quota plan preservation, allow `extraRateWindows`-only payloads, version-scope `WhatCableHelper` cache staging with atomic copy, and cache process icons & byte formatters.
+- Upgrade bundled **CodexBar CLI** from `v0.56.5` to `v0.85.0` to restore Antigravity quota detection across newer Antigravity desktop / bundled `agy` releases.
+- Reject `offline` fallback payloads and require renderable Antigravity quota windows in `CodexQuotaParser` so offline history responses no longer overwrite live quota rings with empty `--` states.
 
 Older release notes remain in [GitHub Releases](https://github.com/dunnlau/MacResourceMonitor/releases).
 
@@ -98,7 +97,7 @@ See [third-party notices](THIRD_PARTY_NOTICES.md) and [CodexBar dependency licen
 
 ## Version
 
-- App version: 2.8.4
-- Build: 51
+- App version: 2.8.5
+- Build: 52
 - Bundle ID: `io.github.svsvnm.MacResourceMonitor`
 - Target: macOS 26.0+, arm64

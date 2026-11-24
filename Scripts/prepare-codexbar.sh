@@ -2,9 +2,9 @@
 set -euo pipefail
 
 PROJECT_DIR="${0:A:h:h}"
-VERSION="0.56.5"
+VERSION="0.85.0"
 ARCHIVE="CodexBarCLI-v${VERSION}-macos-arm64.tar.gz"
-SHA256="1d8499c3b7b3f023ef0258f14d18fc5947f9f9b329af864137d9ad0a3b7802e9"
+SHA256="741c2d6f18c895b1c2ccf79893f287deac1d62ececb31f5a338473eb1e69f308"
 CACHE_DIR="$PROJECT_DIR/.build/dependencies"
 mkdir -p "$CACHE_DIR"
 ARCHIVE_PATH="$CACHE_DIR/$ARCHIVE"

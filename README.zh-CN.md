@@ -13,16 +13,16 @@
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111111?logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-0A84FF">
-  <img alt="Version" src="https://img.shields.io/badge/version-2.8.4-0A84FF">
+  <img alt="Version" src="https://img.shields.io/badge/version-2.8.5-0A84FF">
   <img alt="CI" src="https://github.com/dunnlau/MacResourceMonitor/actions/workflows/ci.yml/badge.svg">
 </p>
 
-> 当前版本：**2.8.4（Build 51）**
+> 当前版本：**2.8.5（Build 52）**
 
 基于 SwiftUI 的原生仪表盘与菜单栏监控，集中查看系统资源、进程流量、Antigravity 订阅配额，以及 USB-C / 雷雳端口状态。支持明暗主题，以不同指标色和清晰文字层级呈现数据。
 ## 下载与安装
 
-**[下载 MacResourceMonitor-2.8.4.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v2.8.4/MacResourceMonitor-2.8.4.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
+**[下载 MacResourceMonitor-2.8.5.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v2.8.5/MacResourceMonitor-2.8.5.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
 
 需要 **macOS 26 或更高版本，以及 Apple Silicon 芯片**。不支持 Intel Mac 和旧版 macOS。
 
@@ -35,7 +35,7 @@
 如需校验下载完整性，将同名 `.zip.sha256` 文件下载到相同目录，运行：
 
 ```zsh
-shasum -a 256 -c MacResourceMonitor-2.8.4.zip.sha256
+shasum -a 256 -c MacResourceMonitor-2.8.5.zip.sha256
 ```
 
 ## 功能概览
@@ -59,15 +59,14 @@ shasum -a 256 -c MacResourceMonitor-2.8.4.zip.sha256
 
 - 所有硬件、进程与端口数据均在本机内存中只读处理，无任何遥测上传，不安装内核扩展、VPN 或特权守护进程。
 - 进程流量基于系统原生 `nettop` 快照，仅统计字节收发计数，不解析域名、不解密或检视任何网络通信内容。
-- AI 配额集成通过内置只读 **CodexBar CLI v0.56.5** 查询当前已登录会话的剩余额度百分比，不读取对话内容、不导入浏览器 Cookie、不扫描历史账单。
+- AI 配额集成通过内置只读 **CodexBar CLI v0.85.0** 查询当前已登录会话的剩余额度百分比，不读取对话内容、不导入浏览器 Cookie、不扫描历史账单。
 
 进程归属取决于 macOS 暴露的计数器；短连接及暂停采样期间的流量可能遗漏，过滤后的代理数据不能作为完整流量账单。温度、风扇和线缆字段取决于硬件支持。
 
-## 2.8.4 更新
+## 2.8.5 更新
 
-- 加固并发与生命周期管理：应用状态模型统一迁移至 `@StateObject` 与 `@MainActor`，将配额子进程阻塞读取移出 Swift Concurrency 协作线程池，并为 `nettop` 采样失败增加退避机制。
-- 提升子进程可靠性与统计准确性：修复管道文件描述符清理与 >512KB 输出截断问题，修正 `proc_listchildpids` 计数换算，收敛代理隧道进程识别规则，并将内存统计口径对齐 macOS 活动监视器。
-- 修复 Antigravity 套餐名误映射并支持仅返回 `extraRateWindows` 的响应；为 `WhatCableHelper` 缓存增加版本隔离与原子暂存；为进程图标和字节格式化器增加缓存复用。
+- 将内置 **CodexBar CLI** 从 `v0.56.5` 升级至 `v0.85.0`，修复新版 Antigravity 桌面端与内置 `agy` 环境下配额探测回退为离线的问题。
+- 在 `CodexQuotaParser` 中显式拒绝 `offline` 离线回退响应并要求至少包含有效可渲染配额窗口，避免离线历史覆盖界面导致 4 个配额环全显示为 `--`。
 
 历史版本说明保留在 [GitHub Releases](https://github.com/dunnlau/MacResourceMonitor/releases)。
 
@@ -98,7 +97,7 @@ open "Mac资源监控.app"
 
 ## 版本信息
 
-- App 版本：2.8.4
-- Build：51
+- App 版本：2.8.5
+- Build：52
 - Bundle ID：`io.github.svsvnm.MacResourceMonitor`
 - 构建目标：macOS 26.0+，arm64
