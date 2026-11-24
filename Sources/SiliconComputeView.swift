@@ -4,46 +4,37 @@ struct SiliconComputeSection: View {
     let snapshot: SiliconComputeSnapshot
 
     var body: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: InterfaceMetrics.sectionSpacing) {
             coreClusterCard
             gpuComputeCard
         }
     }
 
     private var coreClusterCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "cpu")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(InterfacePalette.cpuSeries)
-                    .frame(width: 26, height: 26)
-                    .background(InterfacePalette.cpuSeries.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Apple Silicon 核心调度")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.primary)
-                    Text(clusterSubtitle)
-                        .font(InterfaceTypography.microMetadata)
-                        .foregroundStyle(InterfacePalette.textTertiary)
-                }
-                Spacer()
-            }
+        VStack(alignment: .leading, spacing: 14) {
+            SectionCardHeader(
+                title: "Apple Silicon 核心调度",
+                subtitle: clusterSubtitle,
+                symbol: "cpu",
+                tint: InterfacePalette.cpuSeries
+            )
 
             if snapshot.cores.hasHybridClusters {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 11) {
                     clusterBarRow(
                         title: "性能核 (P-Core)",
                         average: snapshot.cores.performanceAveragePercent,
                         loads: snapshot.cores.performanceCoreLoads,
                         tint: InterfacePalette.cpuSeries
                     )
-                    Divider().opacity(0.4)
+                    Rectangle()
+                        .fill(InterfacePalette.separator)
+                        .frame(height: 1)
                     clusterBarRow(
                         title: "能效核 (E-Core)",
                         average: snapshot.cores.efficiencyAveragePercent,
                         loads: snapshot.cores.efficiencyCoreLoads,
-                        tint: InterfacePalette.download
+                        tint: InterfacePalette.signal
                     )
                 }
             } else {
@@ -57,7 +48,7 @@ struct SiliconComputeSection: View {
                 )
             }
         }
-        .padding(16)
+        .padding(InterfaceMetrics.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .stableDashboardCard()
     }
@@ -89,26 +80,34 @@ struct SiliconComputeSection: View {
 
             if loads.isEmpty {
                 Capsule()
-                    .fill(Color.primary.opacity(0.06))
-                    .frame(height: 18)
+                    .fill(InterfacePalette.subtleSurface)
+                    .frame(height: 20)
             } else {
                 HStack(alignment: .bottom, spacing: 4) {
-                    ForEach(Array(loads.enumerated()), id: \.offset) { _, load in
-                        let normalized = min(1, max(0.06, load / 100.0))
+                    ForEach(Array(loads.enumerated()), id: \.offset) { index, load in
+                        let normalized = min(1, max(0.08, load / 100.0))
+                        let barTint = InterfacePalette.loadTint(for: load, base: tint)
                         VStack(spacing: 0) {
                             Spacer(minLength: 0)
                             RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .fill(tint.opacity(0.25 + 0.70 * normalized))
-                                .frame(height: max(3, 28 * normalized))
+                                .fill(
+                                    LinearGradient(
+                                        colors: [barTint.opacity(0.65), barTint],
+                                        startPoint: .bottom,
+                                        endPoint: .top
+                                    )
+                                )
+                                .frame(height: max(3, 30 * normalized))
                         }
-                        .frame(maxWidth: .infinity, maxHeight: 28)
+                        .frame(maxWidth: .infinity, maxHeight: 30)
                         .background(
                             RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .fill(Color.primary.opacity(0.045))
+                                .fill(InterfacePalette.subtleSurface)
                         )
+                        .help("核心 #\(index + 1)：\(Int(load.rounded()))%")
                     }
                 }
-                .frame(height: 28)
+                .frame(height: 30)
             }
         }
     }
@@ -116,46 +115,25 @@ struct SiliconComputeSection: View {
     private var gpuComputeCard: some View {
         let gpu = snapshot.gpu
         let utilization = gpu.deviceUtilizationPercent
+        let gpuTint = utilization.map { InterfacePalette.loadTint(for: $0, base: InterfacePalette.memorySeries) }
+            ?? InterfacePalette.memorySeries
 
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "square.stack.3d.up")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(InterfacePalette.memorySeries)
-                    .frame(width: 26, height: 26)
-                    .background(InterfacePalette.memorySeries.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("GPU 与图形显存")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.primary)
-                    Text(gpu.name)
-                        .font(InterfaceTypography.microMetadata)
-                        .foregroundStyle(InterfacePalette.textTertiary)
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
+        return VStack(alignment: .leading, spacing: 14) {
+            SectionCardHeader(
+                title: "GPU 与图形显存",
+                subtitle: gpu.name,
+                symbol: "square.stack.3d.up",
+                tint: InterfacePalette.memorySeries
+            ) {
                 Text(utilization.map { String(format: "%.0f%%", $0) } ?? "--")
-                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
                     .monospacedDigit()
-                    .foregroundStyle(utilization != nil ? InterfacePalette.memorySeries : InterfacePalette.textSecondary)
+                    .foregroundStyle(utilization != nil ? gpuTint : InterfacePalette.textSecondary)
             }
 
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.primary.opacity(0.07))
-                    if let utilization {
-                        Capsule()
-                            .fill(InterfacePalette.memorySeries.opacity(0.85))
-                            .frame(width: proxy.size.width * min(1, max(0, utilization / 100.0)))
-                    }
-                }
-            }
-            .frame(height: 6)
+            TelemetryProgressBar(progress: utilization ?? 0, tint: gpuTint, height: 6)
 
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 gpuMetricPill(
                     title: "渲染器",
                     value: gpu.rendererUtilizationPercent.map { String(format: "%.0f%%", $0) } ?? "--"
@@ -174,26 +152,33 @@ struct SiliconComputeSection: View {
                 )
             }
         }
-        .padding(16)
+        .padding(InterfaceMetrics.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .stableDashboardCard()
     }
 
     private func gpuMetricPill(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(.system(size: 11))
+                .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(InterfacePalette.textTertiary)
             Text(value)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                .minimumScaleFactor(0.78)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(
+            InterfacePalette.subtleSurface,
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(InterfacePalette.cardStroke, lineWidth: 0.6)
+        )
     }
 }
 

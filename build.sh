@@ -41,6 +41,7 @@ xcrun swiftc \
   -framework CoreWLAN \
   -framework ServiceManagement \
   -framework UserNotifications \
+  "$SCRIPT_DIR/Sources/DesignSystem.swift" \
   "$SCRIPT_DIR/Sources/CommandRunner.swift" \
   "$SCRIPT_DIR/Sources/ProcessNetworkMonitor.swift" \
   "$SCRIPT_DIR/Sources/ProcessTrafficView.swift" \
