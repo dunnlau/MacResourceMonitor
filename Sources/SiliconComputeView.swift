@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Compact Apple Silicon P-Core / E-Core live equalizer matrix embedded inside the CPU Hero card.
 struct SiliconCoreMiniMatrix: View {
-    let cores: CPUCoreClusterSnapshot
+    let cores: CoreClusterSnapshot
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -81,7 +81,7 @@ struct SiliconCoreMiniMatrix: View {
 
 /// Compact GPU utilization & VRAM breakdown embedded inside the Memory & GPU Hero card.
 struct GPUComputeInlineStats: View {
-    let gpu: GPUSnapshot
+    let gpu: GPUComputeSnapshot
     let memoryUsedText: String
 
     var body: some View {
