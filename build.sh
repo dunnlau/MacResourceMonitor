@@ -38,6 +38,9 @@ xcrun swiftc \
   -framework IOKit \
   -framework SystemConfiguration \
   -framework Metal \
+  -framework CoreWLAN \
+  -framework ServiceManagement \
+  -framework UserNotifications \
   "$SCRIPT_DIR/Sources/CommandRunner.swift" \
   "$SCRIPT_DIR/Sources/ProcessNetworkMonitor.swift" \
   "$SCRIPT_DIR/Sources/ProcessTrafficView.swift" \
@@ -48,6 +51,14 @@ xcrun swiftc \
   "$SCRIPT_DIR/Sources/StorageView.swift" \
   "$SCRIPT_DIR/Sources/BatteryDiagnosticsMonitor.swift" \
   "$SCRIPT_DIR/Sources/BatteryDiagnosticsView.swift" \
+  "$SCRIPT_DIR/Sources/LocalPortsMonitor.swift" \
+  "$SCRIPT_DIR/Sources/LocalPortsView.swift" \
+  "$SCRIPT_DIR/Sources/NetworkDiagnosticsMonitor.swift" \
+  "$SCRIPT_DIR/Sources/NetworkDiagnosticsView.swift" \
+  "$SCRIPT_DIR/Sources/PeripheralsMonitor.swift" \
+  "$SCRIPT_DIR/Sources/PeripheralsView.swift" \
+  "$SCRIPT_DIR/Sources/AppPreferences.swift" \
+  "$SCRIPT_DIR/Sources/SettingsView.swift" \
   "$SCRIPT_DIR/Sources/MacResourceMonitor.swift" \
   -o "$EXECUTABLE_DIR/MacResourceMonitor"
 

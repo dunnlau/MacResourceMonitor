@@ -60,6 +60,9 @@ xcrun swiftc \
   -framework IOKit \
   -framework SystemConfiguration \
   -framework Metal \
+  -framework CoreWLAN \
+  -framework ServiceManagement \
+  -framework UserNotifications \
   Sources/CommandRunner.swift \
   Sources/ProcessNetworkMonitor.swift \
   Sources/ProcessTrafficView.swift \
@@ -70,6 +73,14 @@ xcrun swiftc \
   Sources/StorageView.swift \
   Sources/BatteryDiagnosticsMonitor.swift \
   Sources/BatteryDiagnosticsView.swift \
+  Sources/LocalPortsMonitor.swift \
+  Sources/LocalPortsView.swift \
+  Sources/NetworkDiagnosticsMonitor.swift \
+  Sources/NetworkDiagnosticsView.swift \
+  Sources/PeripheralsMonitor.swift \
+  Sources/PeripheralsView.swift \
+  Sources/AppPreferences.swift \
+  Sources/SettingsView.swift \
   Sources/MacResourceMonitor.swift
 
 echo "[3/6] Build a fresh application bundle"
@@ -78,8 +89,11 @@ xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
   "${SDK_FLAGS[@]}" \
   -module-cache-path "$MODULE_CACHE_DIR" \
   -target arm64-apple-macos26.0 \
+  -framework AppKit \
   -framework IOKit \
-  Sources/CommandRunner.swift Sources/ProcessNetworkMonitor.swift Sources/StorageMonitor.swift Sources/BatteryDiagnosticsMonitor.swift Tests/MonitoringTests.swift \
+  -framework SystemConfiguration \
+  -framework CoreWLAN \
+  Sources/CommandRunner.swift Sources/ProcessNetworkMonitor.swift Sources/StorageMonitor.swift Sources/BatteryDiagnosticsMonitor.swift Sources/LocalPortsMonitor.swift Sources/NetworkDiagnosticsMonitor.swift Sources/PeripheralsMonitor.swift Tests/MonitoringTests.swift \
   -o .build/tests/monitoring-tests
 .build/tests/monitoring-tests
 ./build.sh >/dev/null
