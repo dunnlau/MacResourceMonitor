@@ -156,14 +156,16 @@ enum CodexQuotaParser {
         expectedProvider: AIUsageProvider = .antigravity,
         receivedAt: Date = Date()
     ) throws -> AIUsageSnapshot {
+        let fractionalFormatter = ISO8601DateFormatter()
+        fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plainFormatter = ISO8601DateFormatter()
+        plainFormatter.formatOptions = [.withInternetDateTime]
+
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let value = try decoder.singleValueContainer().decode(String.self)
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = formatter.date(from: value) { return date }
-            formatter.formatOptions = [.withInternetDateTime]
-            guard let date = formatter.date(from: value) else {
+            if let date = fractionalFormatter.date(from: value) { return date }
+            guard let date = plainFormatter.date(from: value) else {
                 throw CodexQuotaError.invalidResponse(expectedProvider)
             }
             return date
@@ -185,8 +187,7 @@ enum CodexQuotaParser {
             }
             throw CodexQuotaError.unavailable(expectedProvider)
         }
-        guard let usage = payload.usage,
-              usage.primary?.remainingPercent != nil || usage.secondary?.remainingPercent != nil else {
+        guard let usage = payload.usage else {
             throw CodexQuotaError.invalidResponse(expectedProvider)
         }
         let extraWindows: [AIUsageNamedWindow] = (usage.extraRateWindows ?? []).compactMap { item in
@@ -195,14 +196,17 @@ enum CodexQuotaParser {
             let title = item.title ?? window.periodTitle
             return AIUsageNamedWindow(id: id, title: title, window: window)
         }
+        guard usage.primary?.remainingPercent != nil
+                || usage.secondary?.remainingPercent != nil
+                || !extraWindows.isEmpty else {
+            throw CodexQuotaError.invalidResponse(expectedProvider)
+        }
         let rawPlan = usage.identity?.loginMethod ?? usage.loginMethod
         let normalizedPlan: String? = {
-            guard let rawPlan = rawPlan?.trimmingCharacters(in: .whitespacesAndNewlines), !rawPlan.isEmpty else {
+            guard let trimmed = rawPlan?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
                 return nil
             }
-            if rawPlan.lowercased() == "plus" { return "ChatGPT Plus" }
-            if rawPlan.lowercased() == "pro" { return "ChatGPT Pro" }
-            return rawPlan
+            return trimmed
         }()
         let email = usage.accountEmail ?? usage.identity?.accountEmail
         return AIUsageSnapshot(
@@ -217,99 +221,72 @@ enum CodexQuotaParser {
     }
 }
 
-/// A bounded subprocess reader dedicated to the optional quota helper. No shell, no unbounded pipe waits.
+private final class QuotaCancellationFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+}
+
+/// A bounded subprocess reader dedicated to the quota helper. Delegates to CommandRunner.
 enum CodexQuotaProcess {
+    static let maxOutputBytes = 2_000_000
+
     static func run(
         executable: URL,
         arguments: [String],
         environment: [String: String],
         timeout: TimeInterval = 25,
-        provider: AIUsageProvider = .antigravity
+        provider: AIUsageProvider = .antigravity,
+        isCancelled: (() -> Bool)? = nil
     ) throws -> Data {
-        let process = Process()
-        let output = Pipe()
-        let errors = Pipe()
-        process.executableURL = executable
-        process.arguments = arguments
-        process.environment = environment
-        process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
-        process.standardInput = FileHandle.nullDevice
-        process.standardOutput = output
-        process.standardError = errors
-        let stdout = output.fileHandleForReading.fileDescriptor
-        let stderr = errors.fileHandleForReading.fileDescriptor
-        _ = fcntl(stdout, F_SETFL, O_NONBLOCK)
-        _ = fcntl(stderr, F_SETFL, O_NONBLOCK)
-        defer {
-            try? output.fileHandleForReading.close()
-            try? errors.fileHandleForReading.close()
+        if isCancelled?() == true || Task.isCancelled {
+            throw CancellationError()
         }
-        try Task.checkCancellation()
-        do { try process.run() } catch { throw CodexQuotaError.missingHelper }
-        defer {
-            if process.isRunning { stop(process) }
+        guard let result = CommandRunner.run(
+            executable.path,
+            arguments: arguments,
+            environment: environment,
+            currentDirectoryURL: FileManager.default.homeDirectoryForCurrentUser,
+            timeout: timeout,
+            maxOutputBytes: maxOutputBytes,
+            isCancelled: { (isCancelled?() == true) || Task.isCancelled }
+        ) else {
+            throw CodexQuotaError.missingHelper
         }
-        let deadline = ProcessInfo.processInfo.systemUptime + timeout
-        var data = Data()
-        var totalRead = 0
-        repeat {
-            try Task.checkCancellation()
-            guard ProcessInfo.processInfo.systemUptime < deadline else { throw CodexQuotaError.timedOut(provider) }
-            for fd in [stdout, stderr] {
-                var buffer = [UInt8](repeating: 0, count: 8192)
-                while true {
-                    let count = Darwin.read(fd, &buffer, buffer.count)
-                    guard count > 0 else { break }
-                    totalRead += count
-                    guard totalRead <= 2_000_000 else { throw CodexQuotaError.invalidResponse(provider) }
-                    if fd == stdout { data.append(contentsOf: buffer.prefix(count)) }
-                }
-            }
-            if !process.isRunning {
-                // Drain once more after exit; descendants retaining a pipe cannot block this reader.
-                var buffer = [UInt8](repeating: 0, count: 8192)
-                while true {
-                    let count = Darwin.read(stdout, &buffer, buffer.count)
-                    guard count > 0 else { break }
-                    totalRead += count
-                    guard totalRead <= 2_000_000 else { throw CodexQuotaError.invalidResponse(provider) }
-                    data.append(contentsOf: buffer.prefix(count))
-                }
-                break
-            }
-            Thread.sleep(forTimeInterval: 0.05)
-        } while true
-        guard !data.isEmpty else { throw CodexQuotaError.unavailable(provider) }
-        return data
-    }
-
-    private static func stop(_ process: Process) {
-        func children(of pid: pid_t) -> [pid_t] {
-            var pids = [pid_t](repeating: 0, count: 256)
-            let count = proc_listchildpids(pid, &pids, Int32(pids.count * MemoryLayout<pid_t>.size))
-            guard count > 0 else { return [] }
-            return pids.prefix(min(Int(count), pids.count)).filter { $0 > 0 }
+        if result.cancelled {
+            throw CancellationError()
         }
-        var descendants: [pid_t] = []
-        var pending = children(of: process.processIdentifier)
-        while !pending.isEmpty, descendants.count < 256 {
-            let pid = pending.removeLast()
-            guard !descendants.contains(pid) else { continue }
-            descendants.append(pid)
-            pending.append(contentsOf: children(of: pid))
+        if result.timedOut {
+            throw CodexQuotaError.timedOut(provider)
         }
-        // Only signal the children still descended from this live helper, before killing their parent.
-        for pid in descendants.reversed() { kill(pid, SIGKILL) }
-        if process.isRunning { process.terminate() }
-        let deadline = ProcessInfo.processInfo.systemUptime + 0.3
-        while process.isRunning, ProcessInfo.processInfo.systemUptime < deadline {
-            Thread.sleep(forTimeInterval: 0.01)
+        if result.exceededOutputLimit {
+            throw CodexQuotaError.invalidResponse(provider)
         }
-        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        guard !result.standardOutput.isEmpty else {
+            throw CodexQuotaError.unavailable(provider)
+        }
+        return result.standardOutput
     }
 }
 
 struct CodexQuotaProvider: Sendable {
+    private static let workerQueue = DispatchQueue(
+        label: "local.mac-resource-monitor.quota-worker",
+        qos: .utility,
+        attributes: .concurrent
+    )
+
     let helperURL: URL
     let configURL: URL
 
@@ -322,50 +299,56 @@ struct CodexQuotaProvider: Sendable {
     }
 
     func fetch(provider: AIUsageProvider = .antigravity) async throws -> AIUsageSnapshot {
-        let worker = Task.detached(priority: .utility) { () throws -> AIUsageSnapshot in
-            guard FileManager.default.isExecutableFile(atPath: helperURL.path),
-                  FileManager.default.fileExists(atPath: configURL.path) else {
-                throw CodexQuotaError.missingHelper
-            }
-            var environment = ProcessInfo.processInfo.environment
-            let home = FileManager.default.homeDirectoryForCurrentUser.path
-            let paths = [
-                "/usr/sbin",
-                "/opt/homebrew/bin",
-                "/usr/local/bin",
-                "\(home)/.local/bin",
-                "/usr/bin",
-                "/bin"
-            ]
-            environment["PATH"] = paths.joined(separator: ":") + ":" + (environment["PATH"] ?? "")
-            environment["CODEXBAR_CONFIG"] = configURL.path
-            let arguments = [
-                "usage",
-                "--provider", provider.rawValue,
-                "--format", "json",
-                "--json-only",
-                "--source", "auto"
-            ]
-            let data: Data
-            do {
-                data = try CodexQuotaProcess.run(
-                    executable: helperURL,
-                    arguments: arguments,
-                    environment: environment,
-                    provider: provider
-                )
-            } catch let error as CodexQuotaError {
-                if case .timedOut = error {
-                    throw CodexQuotaError.timedOut(provider)
-                }
-                throw error
-            }
-            return try CodexQuotaParser.parse(data, expectedProvider: provider)
-        }
+        let helperURL = self.helperURL
+        let configURL = self.configURL
+        let cancellation = QuotaCancellationFlag()
+
         return try await withTaskCancellationHandler {
-            try await worker.value
+            try await withCheckedThrowingContinuation { continuation in
+                Self.workerQueue.async {
+                    do {
+                        if cancellation.isCancelled {
+                            throw CancellationError()
+                        }
+                        guard FileManager.default.isExecutableFile(atPath: helperURL.path),
+                              FileManager.default.fileExists(atPath: configURL.path) else {
+                            throw CodexQuotaError.missingHelper
+                        }
+                        var environment = ProcessInfo.processInfo.environment
+                        let home = FileManager.default.homeDirectoryForCurrentUser.path
+                        let paths = [
+                            "/usr/sbin",
+                            "/opt/homebrew/bin",
+                            "/usr/local/bin",
+                            "\(home)/.local/bin",
+                            "/usr/bin",
+                            "/bin"
+                        ]
+                        environment["PATH"] = paths.joined(separator: ":") + ":" + (environment["PATH"] ?? "")
+                        environment["CODEXBAR_CONFIG"] = configURL.path
+                        let arguments = [
+                            "usage",
+                            "--provider", provider.rawValue,
+                            "--format", "json",
+                            "--json-only",
+                            "--source", "auto"
+                        ]
+                        let data = try CodexQuotaProcess.run(
+                            executable: helperURL,
+                            arguments: arguments,
+                            environment: environment,
+                            provider: provider,
+                            isCancelled: { cancellation.isCancelled }
+                        )
+                        let snapshot = try CodexQuotaParser.parse(data, expectedProvider: provider)
+                        continuation.resume(returning: snapshot)
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
         } onCancel: {
-            worker.cancel()
+            cancellation.cancel()
         }
     }
 }

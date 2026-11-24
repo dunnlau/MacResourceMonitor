@@ -73,7 +73,7 @@ mkdir -p .build/tests
 xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
   "${SDK_FLAGS[@]}" \
   -module-cache-path "$MODULE_CACHE_DIR" \
-  Sources/CodexQuotaMonitor.swift Tests/CodexQuotaTests.swift \
+  Sources/CommandRunner.swift Sources/CodexQuotaMonitor.swift Tests/CodexQuotaTests.swift \
   -o .build/tests/codex-quota-tests
 .build/tests/codex-quota-tests
 xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library \

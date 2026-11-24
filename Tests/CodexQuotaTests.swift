@@ -83,7 +83,12 @@ struct CodexQuotaTests {
         } catch {
             expect(error as? CodexQuotaError == .notRunning(.antigravity), "notRunning classification for antigravity")
         }
-        print("Antigravity Parser: valid response, dual pool windows, notRunning classification passed")
+
+        let proPlanPayload = Data(#"[{"provider":"antigravity","usage":{"primary":null,"secondary":null,"extraRateWindows":[{"id":"antigravity-quota-summary-gemini-5h","title":"Gemini 5-hour","window":{"usedPercent":10,"windowMinutes":300,"resetsAt":"2026-09-20T12:00:00Z"}}],"identity":{"loginMethod":"Pro"}}}]"#.utf8)
+        let proSnapshot = try CodexQuotaParser.parse(proPlanPayload, expectedProvider: .antigravity)
+        expect(proSnapshot.plan == "Pro", "Pro plan must not be relabeled as ChatGPT Pro")
+        expect(proSnapshot.extraWindow(matching: "gemini-5h")?.remainingPercent == 90, "extraRateWindows-only response must parse")
+        print("Antigravity Parser: valid response, dual pool windows, notRunning, extra-only & plan preservation passed")
 
         // 3. Single provider lifecycle tests
         let source = ControlledSource(snapshot: snapshot)

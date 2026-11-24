@@ -13,16 +13,16 @@
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111111?logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-0A84FF">
-  <img alt="Version" src="https://img.shields.io/badge/version-2.8.3-0A84FF">
+  <img alt="Version" src="https://img.shields.io/badge/version-2.8.4-0A84FF">
   <img alt="CI" src="https://github.com/dunnlau/MacResourceMonitor/actions/workflows/ci.yml/badge.svg">
 </p>
 
-> 当前版本：**2.8.3（Build 50）**
+> 当前版本：**2.8.4（Build 51）**
 
 基于 SwiftUI 的原生仪表盘与菜单栏监控，集中查看系统资源、进程流量、Antigravity 订阅配额，以及 USB-C / 雷雳端口状态。支持明暗主题，以不同指标色和清晰文字层级呈现数据。
 ## 下载与安装
 
-**[下载 MacResourceMonitor-2.8.3.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v2.8.3/MacResourceMonitor-2.8.3.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
+**[下载 MacResourceMonitor-2.8.4.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v2.8.4/MacResourceMonitor-2.8.4.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
 
 需要 **macOS 26 或更高版本，以及 Apple Silicon 芯片**。不支持 Intel Mac 和旧版 macOS。
 
@@ -35,7 +35,7 @@
 如需校验下载完整性，将同名 `.zip.sha256` 文件下载到相同目录，运行：
 
 ```zsh
-shasum -a 256 -c MacResourceMonitor-2.8.3.zip.sha256
+shasum -a 256 -c MacResourceMonitor-2.8.4.zip.sha256
 ```
 
 ## 功能概览
@@ -63,11 +63,11 @@ shasum -a 256 -c MacResourceMonitor-2.8.3.zip.sha256
 
 进程归属取决于 macOS 暴露的计数器；短连接及暂停采样期间的流量可能遗漏，过滤后的代理数据不能作为完整流量账单。温度、风扇和线缆字段取决于硬件支持。
 
-## 2.8.3 更新
+## 2.8.4 更新
 
-- 彻底下线已停止使用的 Codex 配额监控服务，将 AI 订阅配额监控聚焦于 Google Antigravity（支持 Gemini 模型池与 Claude / GPT 模型池的双窗口统计）。
-- 移除主界面导航栏与菜单栏面板中的双平台切换选择器，下线冗余的 Codex 配置、路径与提示信息。
-- 精简并加固后台按需轮询、免节流重试与子进程环境，提升响应效率与稳定性。
+- 加固并发与生命周期管理：应用状态模型统一迁移至 `@StateObject` 与 `@MainActor`，将配额子进程阻塞读取移出 Swift Concurrency 协作线程池，并为 `nettop` 采样失败增加退避机制。
+- 提升子进程可靠性与统计准确性：修复管道文件描述符清理与 >512KB 输出截断问题，修正 `proc_listchildpids` 计数换算，收敛代理隧道进程识别规则，并将内存统计口径对齐 macOS 活动监视器。
+- 修复 Antigravity 套餐名误映射并支持仅返回 `extraRateWindows` 的响应；为 `WhatCableHelper` 缓存增加版本隔离与原子暂存；为进程图标和字节格式化器增加缓存复用。
 
 历史版本说明保留在 [GitHub Releases](https://github.com/dunnlau/MacResourceMonitor/releases)。
 
@@ -98,7 +98,7 @@ open "Mac资源监控.app"
 
 ## 版本信息
 
-- App 版本：2.8.3
-- Build：50
+- App 版本：2.8.4
+- Build：51
 - Bundle ID：`io.github.svsvnm.MacResourceMonitor`
 - 构建目标：macOS 26.0+，arm64

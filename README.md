@@ -13,16 +13,16 @@
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111111?logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-0A84FF">
-  <img alt="Version" src="https://img.shields.io/badge/version-2.8.3-0A84FF">
+  <img alt="Version" src="https://img.shields.io/badge/version-2.8.4-0A84FF">
   <img alt="CI" src="https://github.com/dunnlau/MacResourceMonitor/actions/workflows/ci.yml/badge.svg">
 </p>
 
-> Current version: **2.8.3 (Build 50)**
+> Current version: **2.8.4 (Build 51)**
 
 A native SwiftUI dashboard and menu bar monitor for system resources, per-process network traffic, Antigravity subscription quotas, and USB-C / Thunderbolt diagnostics. Light and dark appearances use distinct metric colors and clear text hierarchy.
 ## Download and Install
 
-**[Download MacResourceMonitor-2.8.3.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v2.8.3/MacResourceMonitor-2.8.3.zip)** · [Release notes and checksums](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
+**[Download MacResourceMonitor-2.8.4.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v2.8.4/MacResourceMonitor-2.8.4.zip)** · [Release notes and checksums](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
 
 Requires **macOS 26 or later and Apple Silicon**. Intel Macs and earlier macOS versions are not supported.
 
@@ -35,7 +35,7 @@ The app is ad-hoc signed, not Apple Developer ID signed or notarized. If macOS b
 For an integrity check, download the matching `.zip.sha256` file into the same directory and run:
 
 ```zsh
-shasum -a 256 -c MacResourceMonitor-2.8.3.zip.sha256
+shasum -a 256 -c MacResourceMonitor-2.8.4.zip.sha256
 ```
 
 ## Features
@@ -63,11 +63,11 @@ The menu bar popover provides an at-a-glance view of core system load, **top thr
 
 Process attribution depends on the counters macOS exposes. Short-lived connections and traffic while sampling is paused may be missed; filtered proxy totals are not a full accounting of all traffic. Sensor and cable fields depend on hardware support.
 
-## What's New in 2.8.3
+## What's New in 2.8.4
 
-- Remove deprecated Codex quota monitoring across dashboard components and the menu bar popover, dedicating AI usage tracking exclusively to Google Antigravity (Gemini and Claude / GPT model pools).
-- Simplify UI by removing the dual-provider switcher, obsolete Codex authentication notices, and external Codex usage links.
-- Streamline background telemetry by stripping out unused Codex paths, CLI arguments, and config entries to improve runtime efficiency.
+- Harden concurrency and lifecycle management: migrate app models to `@StateObject` and `@MainActor`, move blocking quota subprocess reads off Swift Concurrency's cooperative thread pool, and add failure backoff for `nettop` sampling.
+- Improve subprocess reliability and accuracy: fix pipe descriptor cleanup, prevent >512KB output truncation, fix `proc_listchildpids` byte-count conversion, tighten proxy tunnel classification, and align memory usage accounting with macOS Activity Monitor.
+- Fix Antigravity quota plan preservation, allow `extraRateWindows`-only payloads, version-scope `WhatCableHelper` cache staging with atomic copy, and cache process icons & byte formatters.
 
 Older release notes remain in [GitHub Releases](https://github.com/dunnlau/MacResourceMonitor/releases).
 
@@ -98,7 +98,7 @@ See [third-party notices](THIRD_PARTY_NOTICES.md) and [CodexBar dependency licen
 
 ## Version
 
-- App version: 2.8.3
-- Build: 50
+- App version: 2.8.4
+- Build: 51
 - Bundle ID: `io.github.svsvnm.MacResourceMonitor`
 - Target: macOS 26.0+, arm64

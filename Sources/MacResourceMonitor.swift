@@ -308,7 +308,8 @@ private enum ResourceMonitorConsumer: Hashable {
     case cable
 }
 
-private final class SystemCollector {
+/// Accessed exclusively on `MonitorModel`'s serial collector queue.
+private final class SystemCollector: @unchecked Sendable {
     private var cachedSnapshot = ResourceSnapshot()
     private var previousCPUTicks: (user: UInt64, system: UInt64, idle: UInt64, nice: UInt64)?
     private var previousNetwork: (interface: String, received: UInt64, sent: UInt64, date: Date)?
@@ -439,9 +440,13 @@ private final class SystemCollector {
         let total = ProcessInfo.processInfo.physicalMemory
         guard result == KERN_SUCCESS else { return (0, total) }
         let pageSize = UInt64(vm_kernel_page_size)
-        let availablePages = UInt64(stats.free_count) + UInt64(stats.inactive_count)
-        let available = min(total, availablePages * pageSize)
-        return (total - available, total)
+        let internalPages = UInt64(stats.internal_page_count)
+        let purgeablePages = UInt64(stats.purgeable_count)
+        let appPages = internalPages >= purgeablePages ? internalPages - purgeablePages : 0
+        let wiredPages = UInt64(stats.wire_count)
+        let compressedPages = UInt64(stats.compressor_page_count)
+        let used = min(total, (appPages + wiredPages + compressedPages) * pageSize)
+        return (used, total)
     }
 
     private func sampleDisk() -> (used: UInt64, total: UInt64) {
@@ -574,6 +579,7 @@ private final class SystemCollector {
     }
 }
 
+@MainActor
 private final class MonitorModel: ObservableObject {
     private(set) var snapshot = ResourceSnapshot()
     private(set) var cpuHistory = Array(repeating: 0.0, count: 60)
@@ -583,7 +589,7 @@ private final class MonitorModel: ObservableObject {
 
     private let collector = SystemCollector()
     private let queue = DispatchQueue(label: "local.mac-resource-monitor.collector", qos: .utility)
-    private var timer: Timer?
+    private var pollTask: Task<Void, Never>?
     private var refreshInProgress = false
     private var refreshPending = false
     private var forceCableRefreshPending = false
@@ -592,12 +598,16 @@ private final class MonitorModel: ObservableObject {
 
     init() {
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            self?.refresh()
+        pollTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                guard !Task.isCancelled, let self else { break }
+                self.refresh()
+            }
         }
     }
 
-    deinit { timer?.invalidate() }
+    deinit { pollTask?.cancel() }
 
     func setActive(_ active: Bool, for consumer: ResourceMonitorConsumer) {
         updateActiveConsumers([consumer: active])
@@ -647,17 +657,18 @@ private final class MonitorModel: ObservableObject {
         let shouldForceExpandedMetricsRefresh = isRefreshingExpandedMetrics
         let options = collectionOptions
         let expandedMetricsGeneration = expandedMetricsRefreshGeneration
+        let collector = self.collector
         forceCableRefreshPending = false
         refreshPending = false
         refreshInProgress = true
         queue.async { [weak self] in
-            guard let self else { return }
-            let next = self.collector.collect(
+            let next = collector.collect(
                 options: options,
                 forceCableRefresh: shouldForceCableRefresh,
                 forceExpandedMetricsRefresh: shouldForceExpandedMetricsRefresh
             )
-            DispatchQueue.main.async {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
                 let nextCPUHistory = Array(self.cpuHistory.suffix(59)) + [next.cpuPercent]
                 let nextMemoryHistory = Array(self.memoryHistory.suffix(59)) + [next.memoryPercent]
                 self.objectWillChange.send()
@@ -2429,13 +2440,8 @@ private struct MenuBarPanel: View {
 
     @ViewBuilder
     private func menuTrafficIcon(row: ProcessTrafficRow) -> some View {
-        if let icon = NSRunningApplication(processIdentifier: pid_t(row.pid))?.icon {
+        if let icon = ProcessIconCache.icon(for: row) {
             Image(nsImage: icon)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 18, height: 18)
-        } else if let bundlePath = row.bundlePath {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: bundlePath))
                 .resizable()
                 .scaledToFit()
                 .frame(width: 18, height: 18)
@@ -2602,15 +2608,22 @@ private func isDashboardWindow(_ window: NSWindow) -> Bool {
     return window.level == .normal && window.styleMask.contains(.closable) && window.canBecomeMain
 }
 
-private func formatBytes(_ bytes: UInt64) -> String {
+@MainActor
+private let memoryByteCountFormatter: ByteCountFormatter = {
     let formatter = ByteCountFormatter()
     formatter.countStyle = .memory
     formatter.allowedUnits = [.useKB, .useMB, .useGB, .useTB]
     formatter.includesUnit = true
     formatter.isAdaptive = true
-    return formatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
+    return formatter
+}()
+
+@MainActor
+private func formatBytes(_ bytes: UInt64) -> String {
+    memoryByteCountFormatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
 }
 
+@MainActor
 private func formatRate(_ bytesPerSecond: Double) -> String {
     let value = UInt64(max(0, bytesPerSecond))
     return "\(formatBytes(value))/s"
@@ -2646,9 +2659,9 @@ private func formatUptime(_ interval: TimeInterval) -> String {
 @main
 private struct MacResourceMonitorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var applicationDelegate
-    @State private var model = MonitorModel()
-    @State private var processNetworkModel = ProcessNetworkMonitor()
-    @State private var codexQuotaModel = CodexQuotaMonitor(defaultProvider: .antigravity, userDefaults: .standard)
+    @StateObject private var model = MonitorModel()
+    @StateObject private var processNetworkModel = ProcessNetworkMonitor()
+    @StateObject private var codexQuotaModel = CodexQuotaMonitor(defaultProvider: .antigravity, userDefaults: .standard)
     @State private var selectedSection: DashboardSection = .monitor
 
     var body: some Scene {

@@ -6,7 +6,7 @@ struct MonitoringTests {
         precondition(condition(), message)
     }
 
-    static func main() throws {
+    @MainActor static func main() throws {
         let start = ProcessInfo.processInfo.systemUptime
         let timeout = CommandRunner.run(
             "/bin/sh",
@@ -34,8 +34,24 @@ struct MonitoringTests {
         expect(data?.standardOutput.count == 17 * 3000, "stdout fully drained")
         expect(data?.standardError.count == 16 * 3000, "stderr fully drained")
         expect(data?.terminationStatus == 7 && data?.timedOut == false, "nonzero exit status preserved")
+
+        let largeOutput = CommandRunner.run(
+            "/bin/sh",
+            arguments: ["-c", "dd if=/dev/zero bs=1024 count=700 2>/dev/null | tr '\\0' 'a'"],
+            timeout: 5
+        )
+        expect(largeOutput?.standardOutput.count == 700 * 1024, "large output >512KB must not be truncated")
+        expect(largeOutput?.exceededOutputLimit == false && largeOutput?.timedOut == false, "large output within limit succeeds")
+
         expect(CommandRunner.run("/does/not/exist", arguments: [], timeout: 0.1) == nil, "launch failure")
-        print("CommandRunner: timeout, inherited pipes, dual-stream output, exit status passed")
+        print("CommandRunner: timeout, inherited pipes, dual-stream output, >512KB drain, exit status passed")
+
+        expect(ProcessTrafficClassifier.isProxyTunnel(leafName: "Surge-Helper", topAppName: "Surge", isAppExtension: false), "Surge recognized as proxy")
+        expect(ProcessTrafficClassifier.isProxyTunnel(leafName: "Stash", topAppName: "Stash", isAppExtension: false), "Stash recognized as proxy")
+        expect(ProcessTrafficClassifier.isProxyTunnel(leafName: "mihomo", topAppName: nil, isAppExtension: false), "mihomo recognized as proxy")
+        expect(!ProcessTrafficClassifier.isProxyTunnel(leafName: "Balloon", topAppName: "Balloon", isAppExtension: false), "Balloon must not match loon")
+        expect(!ProcessTrafficClassifier.isProxyTunnel(leafName: "MyTool", topAppName: "MyStashHelper", isAppExtension: false), "substring stash in unrelated name must not match")
+        print("ProcessTrafficClassifier: exact token and substring rules passed")
 
         let model = ProcessNetworkMonitor()
         func sample(_ bytes: UInt64) -> ProcessTrafficCollectionResult {

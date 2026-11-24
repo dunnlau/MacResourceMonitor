@@ -95,42 +95,58 @@ final class CableCollector {
 
     private func helperURL() -> URL? {
         guard let resourceURL = Bundle.main.resourceURL else { return nil }
+        let fileManager = FileManager.default
         let packagedHelper = resourceURL.appendingPathComponent("Helpers/whatcable-cli")
         let packagedBundle = resourceURL.appendingPathComponent("WhatCable_WhatCableCore.bundle")
-        guard FileManager.default.isExecutableFile(atPath: packagedHelper.path),
-              FileManager.default.fileExists(atPath: packagedBundle.path) else { return nil }
+        guard fileManager.isExecutableFile(atPath: packagedHelper.path),
+              fileManager.fileExists(atPath: packagedBundle.path) else { return nil }
 
-        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+        guard let caches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first else {
             return nil
         }
-        let stagingDirectory = caches
-            .appendingPathComponent(
-                Bundle.main.bundleIdentifier ?? "io.github.svsvnm.MacResourceMonitor",
-                isDirectory: true
-            )
-            .appendingPathComponent("WhatCableHelper-82fded6f", isDirectory: true)
+        let bundleVersion = (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let versionTag = (bundleVersion?.isEmpty == false ? bundleVersion! : "dev")
+            .replacingOccurrences(of: "/", with: "_")
+        let cacheRoot = caches.appendingPathComponent(
+            Bundle.main.bundleIdentifier ?? "io.github.svsvnm.MacResourceMonitor",
+            isDirectory: true
+        )
+        let stagingDirectory = cacheRoot
+            .appendingPathComponent("WhatCableHelper-82fded6f-\(versionTag)", isDirectory: true)
         let stagedHelper = stagingDirectory.appendingPathComponent("whatcable-cli")
         let stagedBundle = stagingDirectory.appendingPathComponent("WhatCable_WhatCableCore.bundle")
+        let stagedBundlePlist = stagedBundle.appendingPathComponent("Info.plist")
 
+        if fileManager.isExecutableFile(atPath: stagedHelper.path),
+           fileManager.fileExists(atPath: stagedBundlePlist.path) {
+            return stagedHelper
+        }
+
+        let tempDirectory = cacheRoot
+            .appendingPathComponent("WhatCableHelper-tmp-\(UUID().uuidString)", isDirectory: true)
         do {
-            try FileManager.default.createDirectory(
-                at: stagingDirectory,
-                withIntermediateDirectories: true
-            )
-            if !FileManager.default.fileExists(atPath: stagedHelper.path) {
-                try FileManager.default.copyItem(at: packagedHelper, to: stagedHelper)
-                try FileManager.default.setAttributes(
-                    [.posixPermissions: 0o755],
-                    ofItemAtPath: stagedHelper.path
-                )
+            try fileManager.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+            let tempHelper = tempDirectory.appendingPathComponent("whatcable-cli")
+            let tempBundle = tempDirectory.appendingPathComponent("WhatCable_WhatCableCore.bundle")
+            try fileManager.copyItem(at: packagedHelper, to: tempHelper)
+            try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tempHelper.path)
+            try fileManager.copyItem(at: packagedBundle, to: tempBundle)
+
+            if fileManager.fileExists(atPath: stagingDirectory.path) {
+                try? fileManager.removeItem(at: stagingDirectory)
             }
-            if !FileManager.default.fileExists(atPath: stagedBundle.path) {
-                try FileManager.default.copyItem(at: packagedBundle, to: stagedBundle)
-            }
+            try fileManager.moveItem(at: tempDirectory, to: stagingDirectory)
         } catch {
+            try? fileManager.removeItem(at: tempDirectory)
+            // Another thread/process may have completed staging concurrently.
+            if fileManager.isExecutableFile(atPath: stagedHelper.path),
+               fileManager.fileExists(atPath: stagedBundlePlist.path) {
+                return stagedHelper
+            }
             return nil
         }
-        return FileManager.default.isExecutableFile(atPath: stagedHelper.path) ? stagedHelper : nil
+        return fileManager.isExecutableFile(atPath: stagedHelper.path) ? stagedHelper : nil
     }
 
     private func parsePort(_ raw: [String: Any]) -> CablePortSnapshot {
