@@ -794,147 +794,219 @@ private final class MonitorModel: ObservableObject {
     }
 }
 
-private struct TelemetryPulseStrip: View {
+private struct OverviewHeroBento: View {
     let snapshot: ResourceSnapshot
     let isLoadingExpandedMetrics: Bool
 
     var body: some View {
-        let cpuTint = InterfacePalette.loadTint(for: snapshot.cpuPercent, base: InterfacePalette.cpuSeries)
-        let memTint = InterfacePalette.loadTint(for: snapshot.memoryPercent, base: InterfacePalette.memorySeries)
-        let tempTint = InterfacePalette.temperatureTint(for: snapshot.cpuTemperature)
-        let tempProgress = snapshot.cpuTemperature.map { min(100, max(0, (($0 - 30) / 70) * 100)) }
-
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                StatusBadge(
-                    text: isLoadingExpandedMetrics ? "传感器同步中" : "LIVE · 2s",
-                    tint: isLoadingExpandedMetrics ? InterfacePalette.upload : InterfacePalette.signal,
-                    showDot: true
-                )
-
-                Text("系统实时遥测")
-                    .font(InterfaceTypography.captionEmphasized)
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                HStack(spacing: 5) {
-                    Image(systemName: "network")
-                        .font(.system(size: 10.5, weight: .semibold))
-                        .foregroundStyle(InterfacePalette.accent)
-                    Text(snapshot.networkInterface)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(InterfacePalette.textSecondary)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(InterfacePalette.subtleSurface, in: Capsule())
-            }
-
-            HStack(spacing: 0) {
-                TelemetryStripMetric(
-                    title: "CPU 负载",
-                    value: String(format: "%.0f%%", snapshot.cpuPercent),
-                    detail: snapshot.cpuPercent >= 80 ? "高负载运行" : "处理器总占用",
-                    progress: snapshot.cpuPercent,
-                    symbol: "cpu",
-                    tint: cpuTint
-                )
-                stripDivider
-                TelemetryStripMetric(
-                    title: "物理内存",
-                    value: String(format: "%.0f%%", snapshot.memoryPercent),
-                    detail: formatBytes(snapshot.memoryUsed),
-                    progress: snapshot.memoryPercent,
-                    symbol: "memorychip",
-                    tint: memTint
-                )
-                stripDivider
-                TelemetryStripMetric(
-                    title: "核心温度",
-                    value: formatTemperature(snapshot.cpuTemperature),
-                    detail: snapshot.hottestCPUTemperature.map {
-                        String(format: "峰值 %.1f°C", $0)
-                    } ?? "传感器就绪",
-                    progress: tempProgress,
-                    symbol: "thermometer.medium",
-                    tint: tempTint
-                )
-                stripDivider
-                TelemetryStripMetric(
-                    title: "网络下行",
-                    value: formatRate(snapshot.downloadBytesPerSecond),
-                    detail: "实时接收速率",
-                    progress: nil,
-                    symbol: "arrow.down",
-                    tint: InterfacePalette.download
-                )
-                stripDivider
-                TelemetryStripMetric(
-                    title: "网络上行",
-                    value: formatRate(snapshot.uploadBytesPerSecond),
-                    detail: "实时发送速率",
-                    progress: nil,
-                    symbol: "arrow.up",
-                    tint: InterfacePalette.upload
-                )
-            }
+        HStack(alignment: .top, spacing: InterfaceMetrics.sectionSpacing) {
+            cpuHeroCard
+            memoryAndGPUHeroCard
+            networkPulseCard
         }
-        .padding(18)
-        .stableDashboardCard(cornerRadius: InterfaceMetrics.cardRadius)
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("系统实时遥测")
     }
 
-    private var stripDivider: some View {
-        Rectangle()
-            .fill(InterfacePalette.separator)
-            .frame(width: 1, height: 64)
-            .padding(.horizontal, 4)
-    }
-}
+    private var cpuHeroCard: some View {
+        let cpuTint = InterfacePalette.loadTint(for: snapshot.cpuPercent, base: InterfacePalette.cpuSeries)
+        let tempTint = InterfacePalette.temperatureTint(for: snapshot.cpuTemperature)
+        let cores = snapshot.siliconCompute.cores
+        let topologyText: String = cores.hasHybridClusters
+            ? "\(cores.performanceCoreCount) P 核 · \(cores.efficiencyCoreCount) E 核"
+            : (cores.allCoreLoads.isEmpty ? "处理器核心" : "\(cores.allCoreLoads.count) 逻辑核心")
+        let peakText = snapshot.hottestCPUTemperature.map { String(format: "峰值 %.1f°C", $0) } ?? "温控就绪"
 
-private struct TelemetryStripMetric: View {
-    let title: String
-    let value: String
-    let detail: String
-    let progress: Double?
-    var symbol: String = "circle.fill"
-    var tint: Color = InterfacePalette.accent
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 7) {
-                IconBadge(symbol: symbol, tint: tint, size: 22, iconSize: 11, cornerRadius: 6)
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(InterfacePalette.textSecondary)
-                    .lineLimit(1)
+                IconBadge(symbol: "cpu", tint: cpuTint, size: 24, iconSize: 11.5, cornerRadius: 6)
+                Text("处理器与核心")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 4)
+                StatusBadge(
+                    text: formatTemperature(snapshot.cpuTemperature),
+                    tint: tempTint
+                )
             }
 
-            Text(value)
-                .font(InterfaceTypography.heroValue)
-                .monospacedDigit()
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.68)
+            HStack(alignment: .center, spacing: 14) {
+                RadialGaugeRing(
+                    progress: snapshot.cpuPercent,
+                    tint: cpuTint,
+                    valueText: "\(Int(snapshot.cpuPercent.rounded()))%",
+                    caption: "CPU",
+                    size: 74,
+                    lineWidth: 6.5
+                )
 
-            if let progress {
-                TelemetryProgressBar(progress: progress, tint: tint, height: 4.5)
-            } else {
-                Rectangle()
-                    .fill(Color.clear)
-                    .frame(height: 4.5)
+                SiliconCoreMiniMatrix(cores: cores)
             }
 
-            Text(detail)
-                .font(InterfaceTypography.microMetadata)
+            Spacer(minLength: 0)
+
+            HStack {
+                Text(topologyText)
+                Spacer()
+                Text(peakText)
+            }
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundStyle(InterfacePalette.textTertiary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .stableDashboardCard()
+    }
+
+    private var memoryAndGPUHeroCard: some View {
+        let memTint = InterfacePalette.loadTint(for: snapshot.memoryPercent, base: InterfacePalette.memorySeries)
+        let gpu = snapshot.siliconCompute.gpu
+        let gpuFooter: String = {
+            var parts: [String] = []
+            if let r = gpu.rendererUtilizationPercent {
+                parts.append(String(format: "渲染 %.0f%%", r))
+            }
+            if let t = gpu.tilerUtilizationPercent {
+                parts.append(String(format: "Tiler %.0f%%", t))
+            }
+            if let maxMem = gpu.recommendedMaxWorkingSetBytes {
+                parts.append("上限 \(siliconFormatBytes(maxMem))")
+            }
+            return parts.isEmpty ? "统一内存架构" : parts.joined(separator: " · ")
+        }()
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
+                IconBadge(symbol: "memorychip", tint: memTint, size: 24, iconSize: 11.5, cornerRadius: 6)
+                Text("内存与图形")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 4)
+                StatusBadge(
+                    text: gpu.name,
+                    tint: InterfacePalette.memorySeries
+                )
+            }
+
+            HStack(alignment: .center, spacing: 14) {
+                RadialGaugeRing(
+                    progress: snapshot.memoryPercent,
+                    tint: memTint,
+                    valueText: "\(Int(snapshot.memoryPercent.rounded()))%",
+                    caption: "MEM",
+                    size: 74,
+                    lineWidth: 6.5
+                )
+
+                GPUComputeInlineStats(
+                    gpu: gpu,
+                    memoryUsedText: formatBytes(snapshot.memoryUsed)
+                )
+            }
+
+            Spacer(minLength: 0)
+
+            Text(gpuFooter)
+                .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(InterfacePalette.textTertiary)
                 .lineLimit(1)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .stableDashboardCard()
+    }
+
+    private var networkPulseCard: some View {
+        let thermalTint: Color = snapshot.thermalState.contains("正常")
+            ? InterfacePalette.signal
+            : InterfacePalette.temperature
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
+                StatusBadge(
+                    text: isLoadingExpandedMetrics ? "同步中" : "LIVE · 2s",
+                    tint: isLoadingExpandedMetrics ? InterfacePalette.upload : InterfacePalette.signal,
+                    showDot: true
+                )
+                Spacer(minLength: 4)
+                HStack(spacing: 4) {
+                    Image(systemName: "network")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(InterfacePalette.accent)
+                    Text(snapshot.networkInterface)
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(InterfacePalette.textSecondary)
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2.5)
+                .background(InterfacePalette.subtleSurface, in: Capsule())
+            }
+
+            VStack(spacing: 8) {
+                networkRateRow(
+                    label: "网络下行",
+                    value: formatRate(snapshot.downloadBytesPerSecond),
+                    symbol: "arrow.down",
+                    tint: InterfacePalette.download
+                )
+                networkRateRow(
+                    label: "网络上行",
+                    value: formatRate(snapshot.uploadBytesPerSecond),
+                    symbol: "arrow.up",
+                    tint: InterfacePalette.upload
+                )
+            }
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 8) {
+                HStack(spacing: 5) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(InterfacePalette.power)
+                    Text(isLoadingExpandedMetrics ? "--" : formatBatteryChargePower(snapshot.chargingPower))
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(InterfacePalette.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                StatusBadge(
+                    text: isLoadingExpandedMetrics ? "检测中" : "温控 \(snapshot.thermalState)",
+                    tint: isLoadingExpandedMetrics ? InterfacePalette.textSecondary : thermalTint
+                )
+            }
+        }
+        .padding(16)
+        .frame(width: 320, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .stableDashboardCard()
+    }
+
+    private func networkRateRow(
+        label: String,
+        value: String,
+        symbol: String,
+        tint: Color
+    ) -> some View {
+        HStack(spacing: 9) {
+            IconBadge(symbol: symbol, tint: tint, size: 24, iconSize: 11, cornerRadius: 6)
+            Text(label)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(InterfacePalette.textSecondary)
+            Spacer(minLength: 6)
+            Text(value)
+                .font(.system(size: 15, weight: .bold, design: .monospaced))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+        }
         .padding(.horizontal, 10)
-        .accessibilityElement(children: .combine)
+        .padding(.vertical, 7)
+        .background(
+            InterfacePalette.subtleSurface,
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
     }
 }
 
@@ -971,7 +1043,7 @@ private struct CombinedLoadHistory: View {
         VStack(alignment: .leading, spacing: 14) {
             SectionCardHeader(
                 title: "实时负载趋势",
-                subtitle: "近 2 分钟双通道采样 · 悬停查看任意时间点",
+                subtitle: "近 2 分钟双通道采样",
                 symbol: "waveform.path.ecg",
                 tint: InterfacePalette.cpuSeries
             ) {
@@ -998,7 +1070,7 @@ private struct CombinedLoadHistory: View {
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    InterfacePalette.cpuSeries.opacity(colorScheme == .dark ? 0.28 : 0.22),
+                                    InterfacePalette.cpuSeries.opacity(colorScheme == .dark ? 0.28 : 0.20),
                                     InterfacePalette.cpuSeries.opacity(0.01)
                                 ],
                                 startPoint: .top,
@@ -1063,7 +1135,7 @@ private struct CombinedLoadHistory: View {
                         }
                 }
             }
-            .frame(height: 174)
+            .frame(minHeight: 196, maxHeight: .infinity)
             .clipped()
 
             HStack {
@@ -1077,7 +1149,7 @@ private struct CombinedLoadHistory: View {
             .foregroundStyle(InterfacePalette.textTertiary)
         }
         .padding(18)
-        .frame(maxWidth: .infinity, minHeight: 280, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .stableDashboardCard(cornerRadius: InterfaceMetrics.cardRadius)
         .transaction { transaction in
             transaction.animation = nil
@@ -1265,18 +1337,15 @@ private struct HardwareTelemetryPanel: View {
 
     var body: some View {
         let diskTint = InterfacePalette.loadTint(for: snapshot.diskPercent, base: InterfacePalette.storage)
-        let thermalTint: Color = snapshot.thermalState.contains("正常")
-            ? InterfacePalette.signal
-            : InterfacePalette.temperature
 
         VStack(alignment: .leading, spacing: 0) {
             SectionCardHeader(
-                title: "硬件与电源",
-                subtitle: isLoadingExpandedMetrics ? "正在读取传感器" : "板载传感器实时状态",
-                symbol: "cpu.fill",
+                title: "硬件与主机",
+                subtitle: Host.current().localizedName ?? "Mac",
+                symbol: "desktopcomputer",
                 tint: InterfacePalette.storage
             )
-            .padding(.bottom, 12)
+            .padding(.bottom, 10)
 
             hardwareRow(
                 "内置磁盘",
@@ -1296,32 +1365,29 @@ private struct HardwareTelemetryPanel: View {
             )
             rowDivider
             hardwareRow(
-                "电池电量",
+                "电池状态",
                 isLoadingExpandedMetrics ? "检测中" : snapshot.batteryText,
                 symbol: "battery.75percent",
                 tint: InterfacePalette.battery
             )
             rowDivider
             hardwareRow(
-                "充电功率",
-                isLoadingExpandedMetrics
-                    ? "--"
-                    : formatBatteryChargePower(snapshot.chargingPower),
+                "供电方式",
+                isLoadingExpandedMetrics ? "检测中" : snapshot.powerSource,
                 symbol: "bolt.fill",
                 tint: InterfacePalette.power
             )
             rowDivider
             hardwareRow(
-                "系统温控",
-                isLoadingExpandedMetrics ? "检测中" : snapshot.thermalState,
-                symbol: "thermometer.medium",
-                tint: thermalTint,
-                valueBadgeTint: isLoadingExpandedMetrics ? nil : thermalTint
+                "持续运行",
+                isLoadingExpandedMetrics ? "检测中" : formatUptime(snapshot.uptime),
+                symbol: "clock",
+                tint: InterfacePalette.accent
             )
         }
         .padding(18)
-        .frame(width: 326, alignment: .topLeading)
-        .frame(minHeight: 280, alignment: .topLeading)
+        .frame(width: 320, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
         .stableDashboardCard(cornerRadius: InterfaceMetrics.cardRadius)
     }
 
@@ -1330,31 +1396,27 @@ private struct HardwareTelemetryPanel: View {
         _ value: String,
         symbol: String,
         tint: Color = InterfacePalette.accent,
-        progress: Double? = nil,
-        valueBadgeTint: Color? = nil
+        progress: Double? = nil
     ) -> some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 10) {
-                IconBadge(symbol: symbol, tint: tint, size: 25, iconSize: 11.5, cornerRadius: 6.5)
+        VStack(spacing: 5) {
+            HStack(spacing: 9) {
+                IconBadge(symbol: symbol, tint: tint, size: 24, iconSize: 11, cornerRadius: 6)
                 Text(label)
                     .font(InterfaceTypography.caption)
                     .foregroundStyle(InterfacePalette.textSecondary)
                 Spacer()
-                if let valueBadgeTint {
-                    StatusBadge(text: value, tint: valueBadgeTint)
-                } else {
-                    Text(value)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                }
+                Text(value)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
             }
             if let progress {
-                TelemetryProgressBar(progress: progress, tint: tint, height: 4.5)
-                    .padding(.leading, 35)
+                TelemetryProgressBar(progress: progress, tint: tint, height: 4)
+                    .padding(.leading, 33)
             }
         }
-        .padding(.vertical, 8.5)
+        .padding(.vertical, 8)
     }
 
     private var rowDivider: some View {
@@ -1385,40 +1447,45 @@ private struct ProcessTable: View {
                     .background(InterfacePalette.subtleSurface, in: Capsule())
             }
 
-            HStack(spacing: 8) {
-                Text("进程")
+            HStack(spacing: 12) {
+                Text("#")
+                    .frame(width: 24, alignment: .trailing)
+                Text("进程名称")
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text("PID")
-                    .frame(width: 58, alignment: .trailing)
-                Text("CPU")
-                    .frame(width: 84, alignment: .trailing)
-                Text("内存")
-                    .frame(width: 76, alignment: .trailing)
+                    .frame(width: 72, alignment: .trailing)
+                Text("CPU 占用")
+                    .frame(width: 140, alignment: .trailing)
+                Text("内存占用")
+                    .frame(width: 96, alignment: .trailing)
             }
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(InterfacePalette.textTertiary)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 10)
             .padding(.top, 2)
 
             Divider().opacity(0.45)
 
             if rows.isEmpty {
-                Spacer()
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.mini)
                     Text("正在读取进程…")
                         .font(.system(size: 12))
                         .foregroundStyle(InterfacePalette.textSecondary)
                 }
-                .frame(maxWidth: .infinity)
-                Spacer()
+                .frame(maxWidth: .infinity, minHeight: 80)
             } else {
                 VStack(spacing: 2) {
-                    ForEach(rows) { row in
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                         let ratio = min(1, max(0, row.cpu / maxCPU))
                         let cpuColor = InterfacePalette.loadTint(for: row.cpu, base: InterfacePalette.cpuSeries)
 
-                        HStack(spacing: 8) {
+                        HStack(spacing: 12) {
+                            Text("\(index + 1)")
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .foregroundStyle(InterfacePalette.textTertiary)
+                                .frame(width: 24, alignment: .trailing)
+
                             Text(row.name)
                                 .font(.system(size: 12.5, weight: .medium))
                                 .foregroundStyle(.primary)
@@ -1427,9 +1494,9 @@ private struct ProcessTable: View {
 
                             Text("\(row.id)")
                                 .foregroundStyle(InterfacePalette.textTertiary)
-                                .frame(width: 58, alignment: .trailing)
+                                .frame(width: 72, alignment: .trailing)
 
-                            HStack(spacing: 6) {
+                            HStack(spacing: 8) {
                                 GeometryReader { proxy in
                                     ZStack(alignment: .leading) {
                                         Capsule().fill(cpuColor.opacity(0.14))
@@ -1438,91 +1505,31 @@ private struct ProcessTable: View {
                                             .frame(width: max(3, proxy.size.width * ratio))
                                     }
                                 }
-                                .frame(width: 28, height: 4)
+                                .frame(width: 68, height: 4.5)
 
                                 Text(String(format: "%.1f%%", row.cpu))
                                     .fontWeight(.semibold)
                                     .foregroundStyle(row.cpu >= 50 ? cpuColor : Color.primary)
+                                    .frame(width: 52, alignment: .trailing)
                             }
-                            .frame(width: 84, alignment: .trailing)
+                            .frame(width: 140, alignment: .trailing)
 
                             Text(formatBytes(row.memoryBytes))
                                 .foregroundStyle(InterfacePalette.textSecondary)
-                                .frame(width: 76, alignment: .trailing)
+                                .frame(width: 96, alignment: .trailing)
                         }
                         .font(.system(size: 12, design: .monospaced))
                         .monospacedDigit()
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 6)
-                        .hoverRowHighlight(cornerRadius: 6)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .hoverRowHighlight(cornerRadius: 7)
                     }
                 }
             }
         }
         .padding(18)
-        .frame(maxWidth: .infinity, minHeight: 238, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .stableDashboardCard()
-    }
-}
-
-private struct SystemDetails: View {
-    let snapshot: ResourceSnapshot
-    let isLoadingExpandedMetrics: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionCardHeader(
-                title: "系统环境",
-                subtitle: "主机与运行上下文",
-                symbol: "desktopcomputer",
-                tint: InterfacePalette.accent
-            )
-            .padding(.bottom, 2)
-
-            VStack(spacing: 0) {
-                detail("网络接口", snapshot.networkInterface, "network")
-                rowDivider
-                detail("供电方式", isLoadingExpandedMetrics ? "检测中" : snapshot.powerSource, "bolt")
-                rowDivider
-                detail("电池状态", isLoadingExpandedMetrics ? "检测中" : snapshot.batteryText, "battery.75percent")
-                rowDivider
-                detail("温控状态", isLoadingExpandedMetrics ? "检测中" : snapshot.thermalState, "thermometer.medium")
-                rowDivider
-                detail("持续运行", isLoadingExpandedMetrics ? "检测中" : formatUptime(snapshot.uptime), "clock")
-                rowDivider
-                detail("主机名称", Host.current().localizedName ?? "Mac", "macbook")
-            }
-        }
-        .padding(18)
-        .frame(width: 326, alignment: .topLeading)
-        .frame(minHeight: 238, alignment: .topLeading)
-        .stableDashboardCard()
-    }
-
-    private func detail(_ label: String, _ value: String, _ symbol: String) -> some View {
-        HStack(spacing: 9) {
-            Image(systemName: symbol)
-                .font(.system(size: 11.5, weight: .medium))
-                .frame(width: 16)
-                .foregroundStyle(InterfacePalette.textTertiary)
-            Text(label)
-                .font(InterfaceTypography.caption)
-                .foregroundStyle(InterfacePalette.textSecondary)
-            Spacer()
-            Text(value)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-                .allowsTightening(true)
-        }
-        .padding(.vertical, 7)
-    }
-
-    private var rowDivider: some View {
-        Rectangle()
-            .fill(InterfacePalette.separator)
-            .frame(height: 1)
     }
 }
 
@@ -1886,26 +1893,19 @@ private struct SidebarNavigationItem: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(isSelected ? InterfacePalette.accent : Color.clear)
-                    .frame(width: 3, height: 16)
-
                 Image(systemName: section.symbol)
                     .font(.system(size: 13.5, weight: isSelected ? .semibold : .medium))
                     .foregroundStyle(isSelected ? InterfacePalette.accent : InterfacePalette.textSecondary)
                     .frame(width: 18)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(section.rawValue)
-                        .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                        .foregroundStyle(isSelected ? Color.primary : InterfacePalette.textSecondary)
-                        .lineLimit(1)
-                }
+                Text(section.rawValue)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected ? Color.primary : InterfacePalette.textSecondary)
+                    .lineLimit(1)
 
                 Spacer(minLength: 0)
             }
-            .padding(.leading, 4)
-            .padding(.trailing, 10)
+            .padding(.horizontal, 11)
             .frame(height: 36)
             .contentShape(Rectangle())
             .background(
@@ -2094,7 +2094,7 @@ private struct DashboardView: View {
         switch selectedSection {
         case .monitor:
             VStack(spacing: InterfaceMetrics.sectionSpacing) {
-                TelemetryPulseStrip(
+                OverviewHeroBento(
                     snapshot: model.snapshot,
                     isLoadingExpandedMetrics: model.isRefreshingExpandedMetrics
                 )
@@ -2111,16 +2111,9 @@ private struct DashboardView: View {
                         isLoadingExpandedMetrics: model.isRefreshingExpandedMetrics
                     )
                 }
+                .fixedSize(horizontal: false, vertical: true)
 
-                SiliconComputeSection(snapshot: model.snapshot.siliconCompute)
-
-                HStack(alignment: .top, spacing: InterfaceMetrics.sectionSpacing) {
-                    ProcessTable(rows: model.snapshot.processes)
-                    SystemDetails(
-                        snapshot: model.snapshot,
-                        isLoadingExpandedMetrics: model.isRefreshingExpandedMetrics
-                    )
-                }
+                ProcessTable(rows: model.snapshot.processes)
             }
         case .storage:
             StorageView(
@@ -2636,30 +2629,34 @@ private struct MenuBarPanel: View {
         progress: Double,
         history: [Double]
     ) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 6) {
-                IconBadge(symbol: symbol, tint: tint, size: 20, iconSize: 10, cornerRadius: 5)
-                Text(title)
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(InterfacePalette.textSecondary)
-                Spacer()
+        HStack(alignment: .center, spacing: 10) {
+            RadialGaugeRing(
+                progress: progress,
+                tint: tint,
+                valueText: value,
+                size: 48,
+                lineWidth: 4.5
+            )
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 4) {
+                    Image(systemName: symbol)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(tint)
+                    Text(title)
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
+
                 Text(detail)
                     .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                     .foregroundStyle(detailTint)
                     .lineLimit(1)
-            }
 
-            HStack(alignment: .lastTextBaseline, spacing: 6) {
-                Text(value)
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 4)
                 TelemetrySparkline(values: history, tint: tint)
-                    .frame(width: 66, height: 22)
+                    .frame(height: 18)
             }
-
-            TelemetryProgressBar(progress: progress, tint: tint, height: 3.5)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
