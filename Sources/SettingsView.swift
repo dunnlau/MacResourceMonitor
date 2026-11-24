@@ -4,11 +4,16 @@ struct SettingsView: View {
     @ObservedObject var preferences: AppPreferences
 
     var body: some View {
-        VStack(alignment: .leading, spacing: InterfaceMetrics.sectionSpacing) {
+        HStack(alignment: .top, spacing: InterfaceMetrics.sectionSpacing) {
             menuBarSettingsCard
-            alertsSettingsCard
-            startupSettingsCard
+
+            VStack(spacing: InterfaceMetrics.sectionSpacing) {
+                alertsSettingsCard
+                startupSettingsCard
+            }
+            .frame(width: 340)
         }
+        .fixedSize(horizontal: false, vertical: true)
         .onAppear {
             preferences.refreshLoginItemStatus()
         }
@@ -36,17 +41,22 @@ struct SettingsView: View {
             }
 
             HStack(spacing: 10) {
-                Text("预览")
+                HStack(spacing: 5) {
+                    Circle().fill(InterfacePalette.temperature.opacity(0.75)).frame(width: 7, height: 7)
+                    Circle().fill(InterfacePalette.power.opacity(0.75)).frame(width: 7, height: 7)
+                    Circle().fill(InterfacePalette.signal.opacity(0.75)).frame(width: 7, height: 7)
+                }
+                Text("菜单栏预览")
                     .font(InterfaceTypography.eyebrow)
                     .foregroundStyle(InterfacePalette.textTertiary)
                 Spacer()
                 Text(menuBarPreviewText)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.primary)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
+                    .padding(.vertical, 4.5)
                     .background(
-                        InterfacePalette.subtleSurface,
+                        InterfacePalette.iconSurface,
                         in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                     )
                     .overlay(
@@ -72,16 +82,19 @@ struct SettingsView: View {
                 Divider().opacity(0.35)
                 toggleRow("整机实时功耗", subtitle: "例如 14W（需硬件支持）", isOn: $preferences.showMenuBarPower)
             }
+
+            Spacer(minLength: 0)
         }
-        .padding(InterfaceMetrics.cardPadding)
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .stableDashboardCard()
     }
 
     private var alertsSettingsCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             SectionCardHeader(
-                title: "高温与高负载通知提醒",
-                subtitle: "达到阈值时发送 macOS 本地通知（同一项 5 分钟内最多提醒一次）",
+                title: "高温与高负载提醒",
+                subtitle: "每项 5 分钟冷却",
                 symbol: "bell.badge.fill",
                 tint: InterfacePalette.temperature
             ) {
@@ -92,50 +105,46 @@ struct SettingsView: View {
                     .accessibilityLabel("启用高温与高负载通知提醒")
             }
 
-            VStack(spacing: 12) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
                         Text("CPU 温度告警阈值")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.system(size: 12.5, weight: .medium))
                             .foregroundStyle(.primary)
-                        Text("核心温度达到或超过该阈值时触发提醒")
-                            .font(InterfaceTypography.microMetadata)
-                            .foregroundStyle(InterfacePalette.textTertiary)
+                        Spacer()
+                        StatusBadge(
+                            text: String(format: "%.0f°C", preferences.highTempThreshold),
+                            tint: InterfacePalette.temperature
+                        )
                     }
-                    Spacer()
                     Slider(value: $preferences.highTempThreshold, in: 75...100, step: 1)
-                        .frame(width: 200)
                         .disabled(!preferences.alertsEnabled)
-                    Text(String(format: "%.0f°C", preferences.highTempThreshold))
-                        .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(InterfacePalette.temperature)
-                        .frame(width: 48, alignment: .trailing)
                 }
 
                 Divider().opacity(0.35)
 
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
                         Text("CPU 持续高负载阈值")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.system(size: 12.5, weight: .medium))
                             .foregroundStyle(.primary)
-                        Text("CPU 负载连续 6 秒超标后触发提醒")
-                            .font(InterfaceTypography.microMetadata)
-                            .foregroundStyle(InterfacePalette.textTertiary)
+                        Spacer()
+                        StatusBadge(
+                            text: String(format: "%.0f%%", preferences.highCPUThreshold),
+                            tint: InterfacePalette.upload
+                        )
                     }
-                    Spacer()
                     Slider(value: $preferences.highCPUThreshold, in: 75...98, step: 1)
-                        .frame(width: 200)
                         .disabled(!preferences.alertsEnabled)
-                    Text(String(format: "%.0f%%", preferences.highCPUThreshold))
-                        .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(InterfacePalette.upload)
-                        .frame(width: 48, alignment: .trailing)
+                    Text("连续 6 秒超标后发送本地通知")
+                        .font(InterfaceTypography.microMetadata)
+                        .foregroundStyle(InterfacePalette.textTertiary)
                 }
             }
             .opacity(preferences.alertsEnabled ? 1 : 0.45)
         }
-        .padding(InterfaceMetrics.cardPadding)
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .stableDashboardCard()
     }
 
@@ -144,7 +153,7 @@ struct SettingsView: View {
         return VStack(alignment: .leading, spacing: 10) {
             SectionCardHeader(
                 title: "开机自动启动",
-                subtitle: "当前状态：\(preferences.loginItemStatus.label)",
+                subtitle: preferences.loginItemStatus.label,
                 symbol: "power.circle.fill",
                 tint: InterfacePalette.signal
             ) {
@@ -168,7 +177,8 @@ struct SettingsView: View {
                     .foregroundStyle(InterfacePalette.temperature)
             }
         }
-        .padding(InterfaceMetrics.cardPadding)
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .stableDashboardCard()
     }
 

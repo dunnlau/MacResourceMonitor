@@ -7,52 +7,222 @@ struct NetworkDiagnosticsView: View {
     var body: some View {
         let snap = model.snapshot
         VStack(alignment: .leading, spacing: InterfaceMetrics.sectionSpacing) {
-            HStack(spacing: 12) {
-                MetricSummaryCard(
-                    title: "Wi-Fi 信号强度",
-                    value: snap.wifi.rssiDbm.map { "\($0) dBm" } ?? "--",
-                    detail: wifiSignalDetail(snap.wifi),
-                    symbol: "wifi",
-                    tint: wifiTint(snap.wifi.rssiDbm)
-                )
-                MetricSummaryCard(
-                    title: "物理协商速率",
-                    value: snap.wifi.transmitRateMbps.map { String(format: "%.0f Mbps", $0) } ?? "--",
-                    detail: wifiChannelDetail(snap.wifi),
-                    symbol: "speedometer",
-                    tint: InterfacePalette.accent
-                )
-                MetricSummaryCard(
-                    title: "网关 / 公网延迟",
-                    value: latencyHeadline(gateway: snap.gatewayLatencyMs, internet: snap.internetLatencyMs),
-                    detail: "路由器 \(formatMs(snap.gatewayLatencyMs)) · 1.1.1.1 \(formatMs(snap.internetLatencyMs))",
-                    symbol: "waveform.path.ecg",
-                    tint: InterfacePalette.signal
-                )
+            diagnosticsHeroBento(snap)
+
+            HStack(alignment: .top, spacing: InterfaceMetrics.sectionSpacing) {
+                latencyChartCard
+                networkConfigCard(snap.config, wifi: snap.wifi)
             }
-
-            latencyChartCard
-
-            networkConfigCard(snap.config, wifi: snap.wifi)
+            .fixedSize(horizontal: false, vertical: true)
         }
         .onAppear { model.setActive(true) }
         .onDisappear { model.setActive(false) }
+    }
+
+    private func diagnosticsHeroBento(_ snap: NetworkDiagnosticsSnapshot) -> some View {
+        HStack(alignment: .top, spacing: InterfaceMetrics.sectionSpacing) {
+            wifiSignalHeroCard(snap.wifi)
+            wifiLinkHeroCard(snap.wifi, primaryInterface: snap.config.primaryInterface)
+            latencyPulseCard(snap)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func wifiSignalHeroCard(_ wifi: WiFiStatusSnapshot) -> some View {
+        let tint = wifiTint(wifi.rssiDbm)
+        let signalProgress: Double = {
+            guard let rssi = wifi.rssiDbm else { return 0 }
+            return min(100, max(0, (Double(rssi) + 95.0) / 55.0 * 100.0))
+        }()
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
+                IconBadge(symbol: "wifi", tint: tint, size: 24, iconSize: 11.5, cornerRadius: 6)
+                Text("Wi-Fi 信号")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 4)
+                StatusBadge(
+                    text: wifi.available ? wifi.signalQualityText : "未连接",
+                    tint: tint,
+                    showDot: wifi.available
+                )
+            }
+
+            HStack(alignment: .center, spacing: 14) {
+                RadialGaugeRing(
+                    progress: signalProgress,
+                    tint: tint,
+                    valueText: wifi.rssiDbm.map { "\($0)" } ?? "--",
+                    caption: "dBm",
+                    size: 74,
+                    lineWidth: 6.5
+                )
+
+                VStack(alignment: .leading, spacing: 6) {
+                    inlineStat("信噪比 SNR", wifi.snrDb.map { "\($0) dB" } ?? "--", tint: .primary)
+                    inlineStat("背景噪声", wifi.noiseDbm.map { "\($0) dBm" } ?? "--", tint: InterfacePalette.textSecondary)
+                    inlineStat("接口网卡", wifi.available ? wifi.interfaceName : "--", tint: InterfacePalette.textTertiary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Spacer(minLength: 0)
+
+            Text(wifi.available ? wifi.ssidDisplay : "当前使用有线网卡或未连 Wi-Fi")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(InterfacePalette.textTertiary)
+                .lineLimit(1)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .stableDashboardCard()
+    }
+
+    private func wifiLinkHeroCard(_ wifi: WiFiStatusSnapshot, primaryInterface: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
+                IconBadge(symbol: "speedometer", tint: InterfacePalette.accent, size: 24, iconSize: 11.5, cornerRadius: 6)
+                Text("物理协商速率")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 4)
+                StatusBadge(text: primaryInterface, tint: InterfacePalette.accent)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(wifi.transmitRateMbps.map { String(format: "%.0f", $0) } ?? "--")
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+                Text("Mbps")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(InterfacePalette.textSecondary)
+            }
+
+            HStack(spacing: 8) {
+                compactPill(title: "频段", value: wifi.bandLabel ?? "--")
+                compactPill(title: "信道", value: wifi.channelNumber.map { "CH \($0)" } ?? "--")
+                compactPill(title: "频宽", value: wifi.channelWidthLabel ?? "--")
+            }
+
+            Spacer(minLength: 0)
+
+            Text(wifi.available ? "无线物理层实时协商参数" : "无无线协商信息")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(InterfacePalette.textTertiary)
+                .lineLimit(1)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .stableDashboardCard()
+    }
+
+    private func latencyPulseCard(_ snap: NetworkDiagnosticsSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
+                StatusBadge(text: "PING · 3s", tint: InterfacePalette.signal, showDot: true)
+                Spacer(minLength: 4)
+                Text("实时延迟")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(InterfacePalette.textTertiary)
+            }
+
+            VStack(spacing: 8) {
+                latencyRow(
+                    label: "默认网关",
+                    value: formatMs(snap.gatewayLatencyMs),
+                    symbol: "wifi.router.fill",
+                    tint: latencyTint(snap.gatewayLatencyMs)
+                )
+                latencyRow(
+                    label: "公网 1.1.1.1",
+                    value: formatMs(snap.internetLatencyMs),
+                    symbol: "globe",
+                    tint: latencyTint(snap.internetLatencyMs)
+                )
+            }
+
+            Spacer(minLength: 0)
+
+            Text(snap.config.routerIP.map { "网关 \($0)" } ?? "等待路由探测")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(InterfacePalette.textTertiary)
+                .lineLimit(1)
+        }
+        .padding(16)
+        .frame(width: 320, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .stableDashboardCard()
+    }
+
+    private func latencyRow(label: String, value: String, symbol: String, tint: Color) -> some View {
+        HStack(spacing: 9) {
+            IconBadge(symbol: symbol, tint: tint, size: 24, iconSize: 11, cornerRadius: 6)
+            Text(label)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(InterfacePalette.textSecondary)
+            Spacer(minLength: 6)
+            Text(value)
+                .font(.system(size: 15, weight: .bold, design: .monospaced))
+                .foregroundStyle(value == "--" ? InterfacePalette.textSecondary : tint)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            InterfacePalette.subtleSurface,
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+    }
+
+    private func inlineStat(_ title: String, _ value: String, tint: Color) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(InterfacePalette.textTertiary)
+            Spacer(minLength: 4)
+            Text(value)
+                .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(tint)
+                .lineLimit(1)
+        }
+    }
+
+    private func compactPill(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(InterfacePalette.textTertiary)
+            Text(value)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            InterfacePalette.subtleSurface,
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+        )
     }
 
     private var latencyChartCard: some View {
         let allValues = (model.gatewayHistory + model.internetHistory).compactMap { $0 }
         let peak = max(20.0, (allValues.max() ?? 20.0) * 1.15)
 
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: 14) {
             SectionCardHeader(
                 title: "网络延迟走势",
-                subtitle: "每 3 秒探测 · 刻度上限 \(String(format: "%.0f ms", peak))",
+                subtitle: "每 3 秒探测 · 上限 \(String(format: "%.0f ms", peak))",
                 symbol: "waveform.path.ecg",
                 tint: InterfacePalette.signal
             ) {
                 HStack(spacing: 8) {
-                    ChartLegendPill(label: "默认网关", color: InterfacePalette.signal)
-                    ChartLegendPill(label: "公网 1.1.1.1", color: InterfacePalette.accent)
+                    ChartLegendPill(label: "网关", color: InterfacePalette.signal)
+                    ChartLegendPill(label: "1.1.1.1", color: InterfacePalette.accent)
                 }
             }
 
@@ -90,10 +260,11 @@ struct NetworkDiagnosticsView: View {
                         .stroke(InterfacePalette.accent, style: StrokeStyle(lineWidth: 2.0, lineCap: .round, lineJoin: .round))
                 }
             }
-            .frame(height: 98)
+            .frame(minHeight: 184, maxHeight: .infinity)
             .clipped()
         }
-        .padding(InterfaceMetrics.cardPadding)
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .stableDashboardCard()
     }
 
@@ -155,35 +326,33 @@ struct NetworkDiagnosticsView: View {
     }
 
     private func networkConfigCard(_ config: NetworkConfigSnapshot, wifi: WiFiStatusSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             SectionCardHeader(
-                title: "接口与路由配置",
-                subtitle: "活跃网卡、IP 地址、DNS 与系统代理",
+                title: "路由与配置",
+                subtitle: wifi.available ? wifi.ssidDisplay : config.primaryInterface,
                 symbol: "point.3.connected.trianglepath.dotted",
                 tint: InterfacePalette.accent
-            ) {
-                StatusBadge(text: config.primaryInterface, tint: InterfacePalette.accent, showDot: true)
-            }
+            )
 
-            VStack(spacing: 2) {
-                detailRow("Wi-Fi 网络", wifi.available ? "\(wifi.ssidDisplay)（\(wifi.interfaceName)）" : wifi.ssidDisplay)
-                Divider().opacity(0.35)
+            VStack(spacing: 0) {
                 detailRow("本机 IPv4", config.localIPv4 ?? "--")
-                Divider().opacity(0.35)
+                rowDivider
                 detailRow("本机 IPv6", config.localIPv6 ?? "未分配")
-                Divider().opacity(0.35)
+                rowDivider
                 detailRow("默认网关", config.routerIP ?? "--")
                 if let routerIPv6 = config.routerIPv6, !routerIPv6.isEmpty {
-                    Divider().opacity(0.35)
+                    rowDivider
                     detailRow("IPv6 网关", routerIPv6)
                 }
-                Divider().opacity(0.35)
+                rowDivider
                 detailRow("DNS 服务器", config.dnsServers.isEmpty ? "--" : config.dnsServers.joined(separator: ", "))
-                Divider().opacity(0.35)
+                rowDivider
                 detailRow("系统代理", config.proxySummary)
             }
         }
-        .padding(InterfaceMetrics.cardPadding)
+        .padding(18)
+        .frame(width: 320, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
         .stableDashboardCard()
     }
 
@@ -192,34 +361,21 @@ struct NetworkDiagnosticsView: View {
             Text(label)
                 .font(InterfaceTypography.caption)
                 .foregroundStyle(InterfacePalette.textSecondary)
-            Spacer(minLength: 12)
+            Spacer(minLength: 10)
             Text(value)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .hoverRowHighlight(cornerRadius: 6)
+        .padding(.vertical, 7)
     }
 
-    private func wifiSignalDetail(_ wifi: WiFiStatusSnapshot) -> String {
-        guard wifi.available else { return "未连接或使用有线网卡" }
-        var parts = [wifi.signalQualityText]
-        if let noise = wifi.noiseDbm { parts.append("噪声 \(noise) dBm") }
-        if let snr = wifi.snrDb { parts.append("SNR \(snr) dB") }
-        return parts.joined(separator: " · ")
-    }
-
-    private func wifiChannelDetail(_ wifi: WiFiStatusSnapshot) -> String {
-        guard wifi.available else { return "无无线协商信息" }
-        var parts: [String] = []
-        if let band = wifi.bandLabel { parts.append(band) }
-        if let ch = wifi.channelNumber { parts.append("信道 \(ch)") }
-        if let width = wifi.channelWidthLabel { parts.append(width) }
-        return parts.isEmpty ? wifi.interfaceName : parts.joined(separator: " · ")
+    private var rowDivider: some View {
+        Rectangle()
+            .fill(InterfacePalette.separator)
+            .frame(height: 1)
     }
 
     private func wifiTint(_ rssi: Int?) -> Color {
@@ -229,10 +385,11 @@ struct NetworkDiagnosticsView: View {
         return InterfacePalette.temperature
     }
 
-    private func latencyHeadline(gateway: Double?, internet: Double?) -> String {
-        if let internet { return String(format: "%.0f ms", internet) }
-        if let gateway { return String(format: "%.1f ms", gateway) }
-        return "--"
+    private func latencyTint(_ ms: Double?) -> Color {
+        guard let ms else { return InterfacePalette.textSecondary }
+        if ms < 25 { return InterfacePalette.signal }
+        if ms < 80 { return InterfacePalette.upload }
+        return InterfacePalette.temperature
     }
 
     private func formatMs(_ value: Double?) -> String {

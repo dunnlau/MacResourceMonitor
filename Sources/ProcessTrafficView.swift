@@ -90,32 +90,7 @@ struct ProcessTrafficView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceMetrics.sectionSpacing) {
-            HStack(spacing: 12) {
-                let trafficScopeDetail = model.filterProxyTunnels
-                    ? "已剥离代理隧道二次汇总"
-                    : "净应用流量（不含代理转发）"
-                MetricSummaryCard(
-                    title: "实时应用下载",
-                    value: processTrafficRate(model.downloadBytesPerSecond),
-                    detail: trafficScopeDetail,
-                    symbol: "arrow.down",
-                    tint: InterfacePalette.download
-                )
-                MetricSummaryCard(
-                    title: "实时应用上传",
-                    value: processTrafficRate(model.uploadBytesPerSecond),
-                    detail: trafficScopeDetail,
-                    symbol: "arrow.up",
-                    tint: InterfacePalette.upload
-                )
-                MetricSummaryCard(
-                    title: "本次监控累计",
-                    value: processTrafficBytes(model.sessionDownloadedBytes + model.sessionUploadedBytes),
-                    detail: "↓ \(processTrafficBytes(model.sessionDownloadedBytes)) · ↑ \(processTrafficBytes(model.sessionUploadedBytes))",
-                    symbol: "sum",
-                    tint: InterfacePalette.accent
-                )
-            }
+            trafficHeroBento
 
             if !model.displayState.proxyTunnelNames.isEmpty {
                 proxyTunnelBanner
@@ -146,6 +121,140 @@ struct ProcessTrafficView: View {
         }
         .onAppear { model.setActive(true, for: .dashboard) }
         .onDisappear { model.setActive(false, for: .dashboard) }
+    }
+
+    private var trafficHeroBento: some View {
+        HStack(alignment: .top, spacing: InterfaceMetrics.sectionSpacing) {
+            liveRatesHeroCard
+            sessionTotalsHeroCard
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var liveRatesHeroCard: some View {
+        let activeCount = model.rows.filter { $0.currentBytesPerSecond >= 1 }.count
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
+                StatusBadge(text: "LIVE · NETTOP", tint: InterfacePalette.signal, showDot: true)
+                Text("实时应用速率")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 4)
+                StatusBadge(
+                    text: "\(activeCount) 个活跃进程",
+                    tint: activeCount > 0 ? InterfacePalette.accent : InterfacePalette.textSecondary
+                )
+            }
+
+            HStack(spacing: 10) {
+                rateTile(
+                    title: "应用下载",
+                    value: processTrafficRate(model.downloadBytesPerSecond),
+                    symbol: "arrow.down",
+                    tint: InterfacePalette.download
+                )
+                rateTile(
+                    title: "应用上传",
+                    value: processTrafficRate(model.uploadBytesPerSecond),
+                    symbol: "arrow.up",
+                    tint: InterfacePalette.upload
+                )
+            }
+
+            Spacer(minLength: 0)
+
+            Text(model.filterProxyTunnels ? "已自动剥离代理隧道二次汇总流量" : "包含全部进程（含代理转发）")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(InterfacePalette.textTertiary)
+                .lineLimit(1)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .stableDashboardCard()
+    }
+
+    private func rateTile(title: String, value: String, symbol: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                IconBadge(symbol: symbol, tint: tint, size: 22, iconSize: 10.5, cornerRadius: 5.5)
+                Text(title)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(InterfacePalette.textSecondary)
+            }
+            Text(value)
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(11)
+        .background(
+            InterfacePalette.subtleSurface,
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+        )
+    }
+
+    private var sessionTotalsHeroCard: some View {
+        let down = model.sessionDownloadedBytes
+        let up = model.sessionUploadedBytes
+        let total = down + up
+        let downRatio = total > 0 ? Double(down) / Double(total) : 0.5
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
+                IconBadge(symbol: "sum", tint: InterfacePalette.accent, size: 24, iconSize: 11.5, cornerRadius: 6)
+                Text("本次监控累计")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 4)
+                Text(processTrafficBytes(total))
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+            }
+
+            GeometryReader { proxy in
+                let width = proxy.size.width
+                HStack(spacing: 2) {
+                    Capsule()
+                        .fill(InterfacePalette.download)
+                        .frame(width: max(4, width * downRatio))
+                    Capsule()
+                        .fill(InterfacePalette.upload)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(height: 6)
+
+            HStack(spacing: 12) {
+                HStack(spacing: 5) {
+                    Circle().fill(InterfacePalette.download).frame(width: 6, height: 6)
+                    Text("下载 \(processTrafficBytes(down))")
+                        .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(InterfacePalette.textSecondary)
+                }
+                Spacer()
+                HStack(spacing: 5) {
+                    Circle().fill(InterfacePalette.upload).frame(width: 6, height: 6)
+                    Text("上传 \(processTrafficBytes(up))")
+                        .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(InterfacePalette.textSecondary)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Text("按进程实时汇总 · 可在右上角清零")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(InterfacePalette.textTertiary)
+                .lineLimit(1)
+        }
+        .padding(16)
+        .frame(width: 320, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .stableDashboardCard()
     }
 
     private var toolbarPanel: some View {

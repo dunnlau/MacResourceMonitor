@@ -1544,30 +1544,107 @@ private struct CableSection: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
-                MetricSummaryCard(
-                    title: "物理端口总数",
-                    value: "\(monitor.ports.count)",
-                    detail: "USB-C / 雷雳 / MagSafe",
-                    symbol: "cable.connector",
-                    tint: InterfacePalette.accent
-                )
-                MetricSummaryCard(
-                    title: "已连接端口",
-                    value: "\(monitor.activePorts.count)",
-                    detail: monitor.activePorts.isEmpty ? "当前无外接设备" : "已建立数据或供电链路",
-                    symbol: "bolt.horizontal.fill",
-                    tint: monitor.activePorts.isEmpty ? InterfacePalette.textSecondary : InterfacePalette.signal
-                )
-                MetricSummaryCard(
-                    title: "外部输入功率",
-                    value: chargingPower.inputWatts.map { String(format: "%.1f W", $0) } ?? "未接入",
-                    detail: chargingPower.externalConnected ? "实时适配器输入" : "当前未接通外部电源",
-                    symbol: "powerplug.fill",
-                    tint: InterfacePalette.power
-                )
+        let totalPorts = monitor.ports.count
+        let activePorts = monitor.activePorts.count
+        let occupancyPercent = totalPorts > 0 ? (Double(activePorts) / Double(totalPorts)) * 100.0 : 0
+        let activeTransports = Array(Set(monitor.activePorts.flatMap(\.activeTransports))).sorted()
+
+        VStack(alignment: .leading, spacing: InterfaceMetrics.sectionSpacing) {
+            HStack(alignment: .top, spacing: InterfaceMetrics.sectionSpacing) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 7) {
+                        IconBadge(symbol: "cable.connector", tint: InterfacePalette.accent, size: 24, iconSize: 11.5, cornerRadius: 6)
+                        Text("物理端口占用")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 4)
+                        StatusBadge(
+                            text: activePorts == 0 ? "全部空闲" : "\(activePorts) 个已连接",
+                            tint: activePorts == 0 ? InterfacePalette.textSecondary : InterfacePalette.signal,
+                            showDot: activePorts > 0
+                        )
+                    }
+
+                    HStack(alignment: .center, spacing: 14) {
+                        RadialGaugeRing(
+                            progress: occupancyPercent,
+                            tint: activePorts > 0 ? InterfacePalette.accent : InterfacePalette.textSecondary,
+                            valueText: "\(activePorts)/\(totalPorts)",
+                            caption: "PORTS",
+                            size: 74,
+                            lineWidth: 6.5
+                        )
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 6) {
+                                Text("活跃协议")
+                                    .font(.system(size: 10.5, weight: .medium))
+                                    .foregroundStyle(InterfacePalette.textTertiary)
+                                Spacer(minLength: 4)
+                                Text(activeTransports.isEmpty ? "无" : activeTransports.joined(separator: " · "))
+                                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                            }
+                            HStack(spacing: 6) {
+                                Text("可用空闲")
+                                    .font(.system(size: 10.5, weight: .medium))
+                                    .foregroundStyle(InterfacePalette.textTertiary)
+                                Spacer(minLength: 4)
+                                Text("\(max(0, totalPorts - activePorts)) 个接口")
+                                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(InterfacePalette.textSecondary)
+                            }
+                            HStack(spacing: 6) {
+                                Text("支持类型")
+                                    .font(.system(size: 10.5, weight: .medium))
+                                    .foregroundStyle(InterfacePalette.textTertiary)
+                                Spacer(minLength: 4)
+                                Text("USB-C / 雷雳 / MagSafe")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(InterfacePalette.textTertiary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .stableDashboardCard()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 7) {
+                        IconBadge(symbol: "powerplug.fill", tint: InterfacePalette.power, size: 24, iconSize: 11.5, cornerRadius: 6)
+                        Text("外部供电协商")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Spacer(minLength: 4)
+                        StatusBadge(
+                            text: chargingPower.externalConnected ? "已接电源" : "电池供电",
+                            tint: chargingPower.externalConnected ? InterfacePalette.power : InterfacePalette.textSecondary,
+                            showDot: chargingPower.externalConnected
+                        )
+                    }
+
+                    Text(chargingPower.inputWatts.map { String(format: "%.1f W", $0) } ?? "未接入")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.primary)
+
+                    Spacer(minLength: 0)
+
+                    Text(chargingPower.externalConnected ? "实时适配器输入功率" : "插入电源或扩展坞后自动刷新")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(InterfacePalette.textTertiary)
+                        .lineLimit(1)
+                }
+                .padding(16)
+                .frame(width: 320, alignment: .topLeading)
+                .frame(maxHeight: .infinity, alignment: .topLeading)
+                .stableDashboardCard()
             }
+            .fixedSize(horizontal: false, vertical: true)
 
             HStack(alignment: .center) {
                 Text("USB-C / 雷雳端口状态")

@@ -23,29 +23,7 @@ struct LocalPortsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceMetrics.sectionSpacing) {
-            HStack(spacing: 12) {
-                MetricSummaryCard(
-                    title: "监听端口总数",
-                    value: "\(model.snapshot.entries.count)",
-                    detail: "当前用户 TCP LISTEN 端口",
-                    symbol: "network",
-                    tint: InterfacePalette.accent
-                )
-                MetricSummaryCard(
-                    title: "仅本机回环",
-                    value: "\(model.snapshot.entries.filter(\.isLoopbackOnly).count)",
-                    detail: "127.0.0.1 / ::1 本地服务",
-                    symbol: "lock.shield.fill",
-                    tint: InterfacePalette.signal
-                )
-                MetricSummaryCard(
-                    title: "对外网卡开放",
-                    value: "\(model.snapshot.entries.filter { !$0.isLoopbackOnly }.count)",
-                    detail: "监听 0.0.0.0 / * / 局域网地址",
-                    symbol: "globe",
-                    tint: InterfacePalette.upload
-                )
-            }
+            portsHeroBento
 
             toolbar
 
@@ -61,6 +39,156 @@ struct LocalPortsView: View {
         }
         .onAppear { model.setActive(true) }
         .onDisappear { model.setActive(false) }
+    }
+
+    private var portsHeroBento: some View {
+        let total = model.snapshot.entries.count
+        let loopbackCount = model.snapshot.entries.filter(\.isLoopbackOnly).count
+        let externalCount = total - loopbackCount
+        let loopbackPercent = total > 0 ? (Double(loopbackCount) / Double(total)) * 100.0 : 100.0
+        let ipv4Count = model.snapshot.entries.filter { $0.ipVersion.contains("4") }.count
+        let ipv6Count = model.snapshot.entries.filter { $0.ipVersion.contains("6") }.count
+
+        return HStack(alignment: .top, spacing: InterfaceMetrics.sectionSpacing) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 7) {
+                    IconBadge(symbol: "lock.shield.fill", tint: InterfacePalette.signal, size: 24, iconSize: 11.5, cornerRadius: 6)
+                    Text("端口暴露面分布")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 4)
+                    StatusBadge(
+                        text: externalCount == 0 ? "全部仅本机回环" : "\(externalCount) 个对外开放",
+                        tint: externalCount == 0 ? InterfacePalette.signal : InterfacePalette.upload,
+                        showDot: true
+                    )
+                }
+
+                HStack(alignment: .center, spacing: 16) {
+                    RadialGaugeRing(
+                        progress: loopbackPercent,
+                        tint: externalCount == 0 ? InterfacePalette.signal : InterfacePalette.accent,
+                        valueText: "\(total)",
+                        caption: "LISTEN",
+                        size: 74,
+                        lineWidth: 6.5
+                    )
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 10) {
+                            exposurePill(
+                                title: "仅本机回环",
+                                value: "\(loopbackCount)",
+                                detail: "127.0.0.1 / ::1",
+                                tint: InterfacePalette.signal
+                            )
+                            exposurePill(
+                                title: "对外网卡开放",
+                                value: "\(externalCount)",
+                                detail: "0.0.0.0 / * / LAN",
+                                tint: InterfacePalette.upload
+                            )
+                        }
+
+                        GeometryReader { proxy in
+                            let ratio = total > 0 ? CGFloat(loopbackCount) / CGFloat(total) : 1
+                            HStack(spacing: 2) {
+                                if loopbackCount > 0 || total == 0 {
+                                    Capsule()
+                                        .fill(InterfacePalette.signal)
+                                        .frame(width: max(4, proxy.size.width * ratio))
+                                }
+                                if externalCount > 0 {
+                                    Capsule()
+                                        .fill(InterfacePalette.upload)
+                                        .frame(maxWidth: .infinity)
+                                }
+                            }
+                        }
+                        .frame(height: 5)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .stableDashboardCard()
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 7) {
+                    IconBadge(symbol: "network", tint: InterfacePalette.accent, size: 24, iconSize: 11.5, cornerRadius: 6)
+                    Text("协议栈统计")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 4)
+                    StatusBadge(text: "TCP LISTEN", tint: InterfacePalette.accent)
+                }
+
+                HStack(spacing: 10) {
+                    protocolPill(title: "IPv4 服务", value: "\(ipv4Count)", tint: InterfacePalette.accent)
+                    protocolPill(title: "IPv6 服务", value: "\(ipv6Count)", tint: InterfacePalette.memorySeries)
+                }
+
+                Spacer(minLength: 0)
+
+                Text("支持一键复制、浏览器打开与 SIGTERM")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(InterfacePalette.textTertiary)
+                    .lineLimit(1)
+            }
+            .padding(16)
+            .frame(width: 320, alignment: .topLeading)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
+            .stableDashboardCard()
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func exposurePill(title: String, value: String, detail: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                Circle().fill(tint).frame(width: 6, height: 6)
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(InterfacePalette.textSecondary)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(value)
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+                Text(detail)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(InterfacePalette.textTertiary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            InterfacePalette.subtleSurface,
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+    }
+
+    private func protocolPill(title: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(InterfacePalette.textTertiary)
+            Text(value)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(tint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            InterfacePalette.subtleSurface,
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
     }
 
     private var toolbar: some View {

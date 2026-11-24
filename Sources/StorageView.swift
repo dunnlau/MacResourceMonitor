@@ -8,25 +8,13 @@ struct StorageView: View {
     let onEjectVolume: (StorageVolumeSnapshot) -> Void
     @Environment(\.colorScheme) private var colorScheme
 
+    private var rootVolume: StorageVolumeSnapshot? {
+        snapshot.volumes.first(where: \.isRoot) ?? snapshot.volumes.first
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: InterfaceMetrics.sectionSpacing) {
-            HStack(spacing: 12) {
-                MetricSummaryCard(
-                    title: "磁盘实时读取",
-                    value: storageFormatRate(snapshot.readBytesPerSecond),
-                    detail: "系统累计 \(storageFormatBytes(snapshot.totalReadBytes))",
-                    symbol: "arrow.down.circle.fill",
-                    tint: InterfacePalette.storage
-                )
-                MetricSummaryCard(
-                    title: "磁盘实时写入",
-                    value: storageFormatRate(snapshot.writeBytesPerSecond),
-                    detail: "系统累计 \(storageFormatBytes(snapshot.totalWriteBytes))",
-                    symbol: "arrow.up.circle.fill",
-                    tint: InterfacePalette.upload
-                )
-                driveHealthCard
-            }
+            storageHeroBento
 
             ioHistoryCard
 
@@ -34,18 +22,205 @@ struct StorageView: View {
         }
     }
 
-    private var driveHealthCard: some View {
+    private var storageHeroBento: some View {
+        HStack(alignment: .top, spacing: InterfaceMetrics.sectionSpacing) {
+            rootCapacityHeroCard
+            driveHealthHeroCard
+            ioPulseCard
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var rootCapacityHeroCard: some View {
+        let volume = rootVolume
+        let usedPercent = volume?.usedPercent ?? 0
+        let ringTint = InterfacePalette.loadTint(for: usedPercent, base: InterfacePalette.storage)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
+                IconBadge(symbol: "internaldrive.fill", tint: ringTint, size: 24, iconSize: 11.5, cornerRadius: 6)
+                Text(volume?.name ?? "主系统盘")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if let fs = volume?.fileSystemType {
+                    StatusBadge(text: fs, tint: InterfacePalette.storage)
+                }
+            }
+
+            HStack(alignment: .center, spacing: 14) {
+                RadialGaugeRing(
+                    progress: usedPercent,
+                    tint: ringTint,
+                    valueText: "\(Int(usedPercent.rounded()))%",
+                    caption: "USED",
+                    size: 74,
+                    lineWidth: 6.5
+                )
+
+                VStack(alignment: .leading, spacing: 6) {
+                    inlineStat("已用容量", volume.map { storageFormatBytes($0.usedBytes) } ?? "--", tint: .primary)
+                    inlineStat("可用空间", volume.map { storageFormatBytes($0.availableBytes) } ?? "--", tint: InterfacePalette.signal)
+                    inlineStat(
+                        "可清除",
+                        volume.map { storageFormatBytes($0.purgeableBytes) } ?? "--",
+                        tint: InterfacePalette.textSecondary
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Spacer(minLength: 0)
+
+            HStack {
+                Text(volume?.mountPath ?? "/")
+                Spacer()
+                Text(volume.map { "总计 \(storageFormatBytes($0.totalBytes))" } ?? "正在读取容量")
+            }
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundStyle(InterfacePalette.textTertiary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .stableDashboardCard()
+    }
+
+    private var driveHealthHeroCard: some View {
         let drive = snapshot.primaryDrive
         let isHealthy = drive.smartStatus.contains("健康") || drive.smartStatus.contains("已验证")
         let healthTint = isHealthy ? InterfacePalette.signal : InterfacePalette.temperature
-        return MetricSummaryCard(
-            title: "主磁盘健康",
-            value: drive.modelName,
-            detail: "\(drive.protocolName) · \(drive.isSolidState ? "固态硬盘" : "机械硬盘")",
-            symbol: "internaldrive.fill",
-            tint: healthTint,
-            badgeText: drive.smartStatus,
-            badgeTint: healthTint
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
+                IconBadge(symbol: "checkmark.shield.fill", tint: healthTint, size: 24, iconSize: 11.5, cornerRadius: 6)
+                Text("主磁盘健康")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 4)
+                StatusBadge(text: drive.smartStatus, tint: healthTint, showDot: true)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(drive.modelName)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text("\(drive.protocolName) · \(drive.isSolidState ? "固态硬盘 (SSD)" : "机械硬盘 (HDD)")")
+                    .font(InterfaceTypography.microMetadata)
+                    .foregroundStyle(InterfacePalette.textSecondary)
+                    .lineLimit(1)
+            }
+
+            HStack(spacing: 8) {
+                compactPill(title: "已挂载卷", value: "\(snapshot.volumes.count) 个")
+                compactPill(
+                    title: "可移除卷",
+                    value: "\(snapshot.volumes.filter { $0.isRemovable && !$0.isRoot }.count) 个"
+                )
+            }
+
+            Spacer(minLength: 0)
+
+            Text("SMART 只读健康监测")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(InterfacePalette.textTertiary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .stableDashboardCard()
+    }
+
+    private var ioPulseCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 7) {
+                StatusBadge(text: "LIVE I/O", tint: InterfacePalette.storage, showDot: true)
+                Spacer(minLength: 4)
+                Text("实时吞吐")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(InterfacePalette.textTertiary)
+            }
+
+            VStack(spacing: 8) {
+                ioRateRow(
+                    label: "实时读取",
+                    value: storageFormatRate(snapshot.readBytesPerSecond),
+                    symbol: "arrow.down",
+                    tint: InterfacePalette.storage
+                )
+                ioRateRow(
+                    label: "实时写入",
+                    value: storageFormatRate(snapshot.writeBytesPerSecond),
+                    symbol: "arrow.up",
+                    tint: InterfacePalette.upload
+                )
+            }
+
+            Spacer(minLength: 0)
+
+            HStack {
+                Text("读 \(storageFormatBytes(snapshot.totalReadBytes))")
+                Spacer()
+                Text("写 \(storageFormatBytes(snapshot.totalWriteBytes))")
+            }
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundStyle(InterfacePalette.textTertiary)
+        }
+        .padding(16)
+        .frame(width: 320, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .stableDashboardCard()
+    }
+
+    private func ioRateRow(label: String, value: String, symbol: String, tint: Color) -> some View {
+        HStack(spacing: 9) {
+            IconBadge(symbol: symbol, tint: tint, size: 24, iconSize: 11, cornerRadius: 6)
+            Text(label)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(InterfacePalette.textSecondary)
+            Spacer(minLength: 6)
+            Text(value)
+                .font(.system(size: 15, weight: .bold, design: .monospaced))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            InterfacePalette.subtleSurface,
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+    }
+
+    private func inlineStat(_ title: String, _ value: String, tint: Color) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(InterfacePalette.textTertiary)
+            Spacer(minLength: 4)
+            Text(value)
+                .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(tint)
+                .lineLimit(1)
+        }
+    }
+
+    private func compactPill(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(InterfacePalette.textTertiary)
+            Text(value)
+                .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(
+            InterfacePalette.subtleSurface,
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
         )
     }
 
@@ -54,13 +229,21 @@ struct StorageView: View {
         return VStack(alignment: .leading, spacing: 12) {
             SectionCardHeader(
                 title: "磁盘读写速率走势",
-                subtitle: "近 2 分钟实时吞吐 · 动态峰值刻度 \(storageFormatRate(peak))",
+                subtitle: "近 2 分钟实时吞吐 · 动态峰值 \(storageFormatRate(peak))",
                 symbol: "chart.xyaxis.line",
                 tint: InterfacePalette.storage
             ) {
                 HStack(spacing: 8) {
-                    ChartLegendPill(label: "读取", color: InterfacePalette.storage)
-                    ChartLegendPill(label: "写入", color: InterfacePalette.upload)
+                    ChartLegendPill(
+                        label: "读取",
+                        value: storageFormatRate(snapshot.readBytesPerSecond),
+                        color: InterfacePalette.storage
+                    )
+                    ChartLegendPill(
+                        label: "写入",
+                        value: storageFormatRate(snapshot.writeBytesPerSecond),
+                        color: InterfacePalette.upload
+                    )
                 }
             }
 
@@ -110,10 +293,10 @@ struct StorageView: View {
                         .stroke(InterfacePalette.upload, style: StrokeStyle(lineWidth: 2.0, lineCap: .round, lineJoin: .round))
                 }
             }
-            .frame(height: 98)
+            .frame(height: 112)
             .clipped()
         }
-        .padding(InterfaceMetrics.cardPadding)
+        .padding(18)
         .stableDashboardCard()
     }
 
@@ -176,7 +359,7 @@ struct StorageView: View {
                 }
             }
         }
-        .padding(InterfaceMetrics.cardPadding)
+        .padding(18)
         .stableDashboardCard()
     }
 
