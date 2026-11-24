@@ -129,6 +129,19 @@ struct MonitoringTests {
         expect(PeripheralClassifier.inferCategory(for: "AirPods Pro") == "音频设备", "AirPods category")
         expect(PeripheralClassifier.inferCategory(for: "Magic Keyboard") == "键盘", "Keyboard category")
         expect(PeripheralClassifier.inferCategory(for: "Magic Trackpad") == "触控板", "Trackpad category")
-        print("LocalPorts, NetworkDiagnostics & Peripherals parsers passed")
+
+        let kelvinTemp = BatteryDiagnosticsParser.normalizeTemperatureCelsius(30150)
+        expect(kelvinTemp != nil && abs(kelvinTemp! - 28.35) < 0.05, "centikelvin battery temp normalized")
+        expect(BatteryDiagnosticsParser.normalizeTemperatureCelsius(2985) == 29.85, "centidegrees battery temp normalized")
+        expect(BatteryDiagnosticsParser.normalizeTemperatureCelsius(31) == 31.0, "whole-degree battery temp normalized")
+
+        let spPowerJSON = Data(#"{"SPPowerDataType":[{"sppower_battery_health_info":{"sppower_battery_health":"Good","sppower_battery_health_maximum_capacity":"96%","sppower_battery_cycle_count":107}}]}"#.utf8)
+        let spPower = BatteryDiagnosticsParser.parseSystemProfilerPowerJSON(spPowerJSON)
+        expect(spPower.healthPercent == 96.0 && spPower.condition == "正常" && spPower.cycleCount == 107, "system_profiler battery health parsed")
+
+        let preferredV6 = NetworkDiagnosticsParser.preferredIPv6(from: ["fe80::1%en0", "240e:1234::88", "::1"])
+        expect(preferredV6 == "240e:1234::88", "global IPv6 preferred over link-local")
+        expect(NetworkDiagnosticsParser.preferredIPv6(from: ["fe80::abcd%en0"]) == "fe80::abcd", "link-local IPv6 fallback strips scope")
+        print("LocalPorts, NetworkDiagnostics, Peripherals & Battery profiler parsers passed")
     }
 }

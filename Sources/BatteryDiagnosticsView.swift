@@ -66,9 +66,15 @@ struct BatteryDiagnosticsView: View {
 
     private var capacityDetail: String {
         if let maxCap = diagnostics.maxCapacityMAh, let designCap = diagnostics.designCapacityMAh {
+            if let condition = diagnostics.batteryCondition {
+                return "\(condition) · \(maxCap) / \(designCap) mAh"
+            }
             return "\(maxCap) / \(designCap) mAh"
         }
-        return "正在读取电池容量"
+        if let condition = diagnostics.batteryCondition {
+            return "电池状态：\(condition)"
+        }
+        return "系统最大容量"
     }
 
     private var chargeStatusDetail: String {
@@ -94,7 +100,19 @@ struct BatteryDiagnosticsView: View {
     }
 
     private var powerBreakdownCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let isDischarging = !diagnostics.isCharging && diagnostics.dischargeWatts != nil
+        let batteryFlowTitle = isDischarging ? "电池放电功率" : "电池充电功率"
+        let batteryFlowValue: String = {
+            if let watts = batteryChargeWatts {
+                return String(format: "%.1f W", watts)
+            }
+            if let discharge = diagnostics.dischargeWatts {
+                return String(format: "%.1f W", discharge)
+            }
+            return diagnostics.isCharging ? "检测中" : "未充电"
+        }()
+
+        return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("实时功耗拆解")
                     .font(.system(size: 14, weight: .semibold))
@@ -117,9 +135,9 @@ struct BatteryDiagnosticsView: View {
                     tint: InterfacePalette.power
                 )
                 powerItem(
-                    title: "电池充电功率",
-                    value: batteryChargeWatts.map { String(format: "%.1f W", $0) } ?? (diagnostics.isCharging ? "检测中" : "未充电"),
-                    tint: InterfacePalette.battery
+                    title: batteryFlowTitle,
+                    value: batteryFlowValue,
+                    tint: isDischarging ? InterfacePalette.upload : InterfacePalette.battery
                 )
                 powerItem(
                     title: "整机实时负载",
@@ -190,10 +208,10 @@ struct BatteryDiagnosticsView: View {
                                 .lineLimit(1)
                                 .frame(width: 140, alignment: .leading)
 
-                            Text("PID \(item.pid)")
+                            Text("PID \(String(item.pid))")
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(InterfacePalette.textTertiary)
-                                .frame(width: 68, alignment: .leading)
+                                .frame(width: 72, alignment: .leading)
 
                             Text(item.friendlyType)
                                 .font(.system(size: 11, weight: .medium))

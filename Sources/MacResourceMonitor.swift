@@ -238,6 +238,13 @@ private final class SMCReader {
         return (speeds.max(), count)
     }
 
+    func batteryTemperature() -> Double? {
+        let keys = ["TB0T", "TB1T", "TB2T"]
+        let readings = keys.compactMap { value(for: $0) }.filter { $0.isFinite && (5...85).contains($0) }
+        guard !readings.isEmpty else { return nil }
+        return readings.reduce(0, +) / Double(readings.count)
+    }
+
     private func fourCharacterCode(_ string: String) -> UInt32 {
         string.utf8.reduce(0) { ($0 << 8) | UInt32($1) }
     }
@@ -392,9 +399,13 @@ private final class SystemCollector: @unchecked Sendable {
         }
 
         if options.includeBatteryDiagnostics || forceBatteryDiagnosticsRefresh {
-            snapshot.batteryDiagnostics = batteryDiagnosticsCollector.collect(
+            var batteryDiag = batteryDiagnosticsCollector.collect(
                 forceRefresh: forceBatteryDiagnosticsRefresh
             )
+            if batteryDiag.temperatureCelsius == nil {
+                batteryDiag.temperatureCelsius = smc.batteryTemperature()
+            }
+            snapshot.batteryDiagnostics = batteryDiag
         }
 
         snapshot.processes = options.includeTopProcesses ? sampleTopProcesses() : []
@@ -1621,20 +1632,24 @@ private struct CablePortCard: View {
 }
 
 private enum DashboardSection: String, CaseIterable, Identifiable {
-    case monitor = "系统监控"
-    case traffic = "网络与服务"
-    case ports = "硬件与供电"
+    case monitor = "系统概览"
+    case storage = "磁盘存储"
+    case traffic = "网络监控"
+    case ports = "电源与接口"
+    case peripherals = "显示与外设"
     case settings = "偏好设置"
 
-    static let primaryCases: [DashboardSection] = [.monitor, .traffic, .ports]
+    static let primaryCases: [DashboardSection] = [.monitor, .storage, .traffic, .ports, .peripherals]
 
     var id: String { rawValue }
 
     var symbol: String {
         switch self {
         case .monitor: return "gauge.with.dots.needle.50percent"
-        case .traffic: return "point.3.connected.trianglepath.dotted"
-        case .ports: return "bolt.horizontal.circle"
+        case .storage: return "internaldrive"
+        case .traffic: return "network"
+        case .ports: return "bolt.batteryblock"
+        case .peripherals: return "display.2"
         case .settings: return "slider.horizontal.3"
         }
     }
@@ -1645,9 +1660,11 @@ private enum DashboardSection: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .monitor: return "性能、GPU 与磁盘"
-        case .traffic: return "流量、端口与诊断"
-        case .ports: return "接口、电池与外设"
+        case .monitor: return "CPU、GPU 与内存温控"
+        case .storage: return "磁盘读写与卷宗健康"
+        case .traffic: return "流量、端口与网络诊断"
+        case .ports: return "电池能耗与接口线缆"
+        case .peripherals: return "显示器与蓝牙外设"
         case .settings: return "菜单栏、通知与启动"
         }
     }
@@ -1655,18 +1672,13 @@ private enum DashboardSection: String, CaseIterable, Identifiable {
     var eyebrow: String {
         switch self {
         case .monitor: return "SYSTEM / LIVE"
+        case .storage: return "DISK / STORAGE"
         case .traffic: return "NETWORK / SERVICE"
-        case .ports: return "HARDWARE / POWER"
+        case .ports: return "POWER / PORTS"
+        case .peripherals: return "DISPLAY / PERIPHERALS"
         case .settings: return "PREFERENCES"
         }
     }
-}
-
-private enum MonitorSubTab: String, CaseIterable, Identifiable {
-    case overview = "性能概览"
-    case storage = "磁盘存储"
-
-    var id: String { rawValue }
 }
 
 private enum NetworkSubTab: String, CaseIterable, Identifiable {
@@ -1677,10 +1689,9 @@ private enum NetworkSubTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-private enum HardwareSubTab: String, CaseIterable, Identifiable {
-    case ports = "接口线缆"
+private enum PowerPortSubTab: String, CaseIterable, Identifiable {
     case battery = "电池能耗"
-    case peripherals = "外设显示"
+    case ports = "接口线缆"
 
     var id: String { rawValue }
 }
@@ -2052,9 +2063,8 @@ private struct DashboardView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Binding var selectedSection: DashboardSection
-    @State private var monitorSubTab: MonitorSubTab = .overview
     @State private var networkSubTab: NetworkSubTab = .traffic
-    @State private var hardwareSubTab: HardwareSubTab = .ports
+    @State private var powerPortSubTab: PowerPortSubTab = .battery
 
     var body: some View {
         ZStack {
@@ -2101,10 +2111,7 @@ private struct DashboardView: View {
         .onChange(of: selectedSection) { _, _ in
             updateResourceConsumers()
         }
-        .onChange(of: monitorSubTab) { _, _ in
-            updateResourceConsumers()
-        }
-        .onChange(of: hardwareSubTab) { _, _ in
+        .onChange(of: powerPortSubTab) { _, _ in
             updateResourceConsumers()
         }
         .onDisappear {
@@ -2121,9 +2128,11 @@ private struct DashboardView: View {
 
     private var scrollIdentity: String {
         switch selectedSection {
-        case .monitor: return "monitor-\(monitorSubTab.rawValue)"
+        case .monitor: return "monitor"
+        case .storage: return "storage"
         case .traffic: return "network-\(networkSubTab.rawValue)"
-        case .ports: return "hardware-\(hardwareSubTab.rawValue)"
+        case .ports: return "power-\(powerPortSubTab.rawValue)"
+        case .peripherals: return "peripherals"
         case .settings: return "settings"
         }
     }
@@ -2131,11 +2140,11 @@ private struct DashboardView: View {
     private func updateResourceConsumers() {
         model.updateActiveConsumers([
             .expandedMetrics: selectedSection == .monitor || selectedSection == .ports,
-            .processTable: selectedSection == .monitor && monitorSubTab == .overview,
-            .siliconCompute: selectedSection == .monitor && monitorSubTab == .overview,
-            .storage: selectedSection == .monitor && monitorSubTab == .storage,
-            .cable: selectedSection == .ports && hardwareSubTab == .ports,
-            .batteryDiagnostics: selectedSection == .ports && hardwareSubTab == .battery
+            .processTable: selectedSection == .monitor,
+            .siliconCompute: selectedSection == .monitor,
+            .storage: selectedSection == .storage,
+            .cable: selectedSection == .ports && powerPortSubTab == .ports,
+            .batteryDiagnostics: selectedSection == .ports && powerPortSubTab == .battery
         ])
     }
 
@@ -2143,46 +2152,44 @@ private struct DashboardView: View {
     private var sectionContent: some View {
         switch selectedSection {
         case .monitor:
-            if monitorSubTab == .overview {
-                VStack(spacing: 14) {
-                    TelemetryPulseStrip(
+            VStack(spacing: 14) {
+                TelemetryPulseStrip(
+                    snapshot: model.snapshot,
+                    isLoadingExpandedMetrics: model.isRefreshingExpandedMetrics
+                )
+
+                HStack(alignment: .top, spacing: 14) {
+                    CombinedLoadHistory(
+                        cpuValues: model.cpuHistory,
+                        memoryValues: model.memoryHistory,
+                        cpuValue: model.snapshot.cpuPercent,
+                        memoryValue: model.snapshot.memoryPercent
+                    )
+                    HardwareTelemetryPanel(
                         snapshot: model.snapshot,
                         isLoadingExpandedMetrics: model.isRefreshingExpandedMetrics
                     )
-
-                    HStack(alignment: .top, spacing: 14) {
-                        CombinedLoadHistory(
-                            cpuValues: model.cpuHistory,
-                            memoryValues: model.memoryHistory,
-                            cpuValue: model.snapshot.cpuPercent,
-                            memoryValue: model.snapshot.memoryPercent
-                        )
-                        HardwareTelemetryPanel(
-                            snapshot: model.snapshot,
-                            isLoadingExpandedMetrics: model.isRefreshingExpandedMetrics
-                        )
-                    }
-
-                    SiliconComputeSection(snapshot: model.snapshot.siliconCompute)
-
-                    HStack(alignment: .top, spacing: 14) {
-                        ProcessTable(rows: model.snapshot.processes)
-                        SystemDetails(
-                            snapshot: model.snapshot,
-                            isLoadingExpandedMetrics: model.isRefreshingExpandedMetrics
-                        )
-                    }
                 }
-            } else {
-                StorageView(
-                    snapshot: model.snapshot.storage,
-                    readHistory: model.diskReadHistory,
-                    writeHistory: model.diskWriteHistory,
-                    onEjectVolume: { volume in
-                        model.ejectVolume(volume)
-                    }
-                )
+
+                SiliconComputeSection(snapshot: model.snapshot.siliconCompute)
+
+                HStack(alignment: .top, spacing: 14) {
+                    ProcessTable(rows: model.snapshot.processes)
+                    SystemDetails(
+                        snapshot: model.snapshot,
+                        isLoadingExpandedMetrics: model.isRefreshingExpandedMetrics
+                    )
+                }
             }
+        case .storage:
+            StorageView(
+                snapshot: model.snapshot.storage,
+                readHistory: model.diskReadHistory,
+                writeHistory: model.diskWriteHistory,
+                onEjectVolume: { volume in
+                    model.ejectVolume(volume)
+                }
+            )
         case .traffic:
             switch networkSubTab {
             case .traffic:
@@ -2193,15 +2200,7 @@ private struct DashboardView: View {
                 NetworkDiagnosticsView(model: networkDiagnosticsModel)
             }
         case .ports:
-            switch hardwareSubTab {
-            case .ports:
-                PortMonitorView(
-                    monitor: model.snapshot.cableMonitor,
-                    chargingPower: model.isRefreshingExpandedMetrics
-                        ? ChargingPowerSnapshot()
-                        : model.snapshot.chargingPower,
-                    isRefreshing: model.isRefreshingCable
-                )
+            switch powerPortSubTab {
             case .battery:
                 BatteryDiagnosticsView(
                     diagnostics: model.snapshot.batteryDiagnostics,
@@ -2210,9 +2209,17 @@ private struct DashboardView: View {
                     systemLoadWatts: model.snapshot.chargingPower.systemLoadWatts,
                     powerSource: model.snapshot.powerSource
                 )
-            case .peripherals:
-                PeripheralsView(model: peripheralsModel)
+            case .ports:
+                PortMonitorView(
+                    monitor: model.snapshot.cableMonitor,
+                    chargingPower: model.isRefreshingExpandedMetrics
+                        ? ChargingPowerSnapshot()
+                        : model.snapshot.chargingPower,
+                    isRefreshing: model.isRefreshingCable
+                )
             }
+        case .peripherals:
+            PeripheralsView(model: peripheralsModel)
         case .settings:
             SettingsView(preferences: preferences)
         }
@@ -2299,12 +2306,10 @@ private struct DashboardView: View {
 
             Spacer(minLength: 14)
 
-            if selectedSection == .monitor {
-                SectionSegmentedControl(selection: $monitorSubTab)
-            } else if selectedSection == .traffic {
+            if selectedSection == .traffic {
                 SectionSegmentedControl(selection: $networkSubTab)
             } else if selectedSection == .ports {
-                SectionSegmentedControl(selection: $hardwareSubTab)
+                SectionSegmentedControl(selection: $powerPortSubTab)
             }
 
             if selectedSection != .settings {
@@ -2337,15 +2342,14 @@ private struct DashboardView: View {
     private var heroFootnote: String {
         switch selectedSection {
         case .monitor:
-            if monitorSubTab == .storage {
-                if let date = model.snapshot.storage.updatedAt {
-                    return "更新于 \(date.formatted(date: .omitted, time: .standard))"
-                }
-                return "正在读取存储"
-            }
             if model.isRefreshingExpandedMetrics { return "正在更新传感器" }
             let date = model.snapshot.expandedMetricsUpdatedAt ?? model.snapshot.updatedAt
             return "更新于 \(date.formatted(date: .omitted, time: .standard))"
+        case .storage:
+            if let date = model.snapshot.storage.updatedAt {
+                return "更新于 \(date.formatted(date: .omitted, time: .standard))"
+            }
+            return "正在读取存储"
         case .traffic:
             switch networkSubTab {
             case .traffic:
@@ -2365,7 +2369,12 @@ private struct DashboardView: View {
                 return "正在探测"
             }
         case .ports:
-            switch hardwareSubTab {
+            switch powerPortSubTab {
+            case .battery:
+                if let date = model.snapshot.batteryDiagnostics.updatedAt {
+                    return "检测于 \(date.formatted(date: .omitted, time: .standard))"
+                }
+                return "只读电池与休眠检测"
             case .ports:
                 if model.isRefreshingCable { return "正在检测" }
                 if let error = model.snapshot.cableMonitor.errorText {
@@ -2375,17 +2384,12 @@ private struct DashboardView: View {
                     return "检测于 \(date.formatted(date: .omitted, time: .standard))"
                 }
                 return "只读检测"
-            case .battery:
-                if let date = model.snapshot.batteryDiagnostics.updatedAt {
-                    return "检测于 \(date.formatted(date: .omitted, time: .standard))"
-                }
-                return "只读电池与休眠检测"
-            case .peripherals:
-                if let date = peripheralsModel.snapshot.updatedAt {
-                    return "更新于 \(date.formatted(date: .omitted, time: .standard))"
-                }
-                return "正在扫描外设"
             }
+        case .peripherals:
+            if let date = peripheralsModel.snapshot.updatedAt {
+                return "更新于 \(date.formatted(date: .omitted, time: .standard))"
+            }
+            return "正在扫描外设"
         case .settings:
             return ""
         }
@@ -2394,6 +2398,7 @@ private struct DashboardView: View {
     private var heroActionTitle: String {
         switch selectedSection {
         case .monitor: return "刷新"
+        case .storage: return "刷新存储"
         case .traffic:
             switch networkSubTab {
             case .traffic: return "清零累计"
@@ -2401,11 +2406,12 @@ private struct DashboardView: View {
             case .diagnostics: return networkDiagnosticsModel.isRefreshing ? "探测中" : "立即探测"
             }
         case .ports:
-            switch hardwareSubTab {
-            case .ports: return model.isRefreshingCable ? "检测中" : "重新检测"
+            switch powerPortSubTab {
             case .battery: return "刷新诊断"
-            case .peripherals: return peripheralsModel.isRefreshing ? "扫描中" : "刷新外设"
+            case .ports: return model.isRefreshingCable ? "检测中" : "重新检测"
             }
+        case .peripherals:
+            return peripheralsModel.isRefreshing ? "扫描中" : "刷新外设"
         case .settings:
             return ""
         }
@@ -2413,15 +2419,15 @@ private struct DashboardView: View {
 
     private var isHeroActionDisabled: Bool {
         switch selectedSection {
-        case .monitor: return false
+        case .monitor, .storage: return false
         case .traffic:
             if networkSubTab == .ports { return localPortsModel.isRefreshing }
             if networkSubTab == .diagnostics { return networkDiagnosticsModel.isRefreshing }
             return false
         case .ports:
-            if hardwareSubTab == .ports { return model.isRefreshingCable }
-            if hardwareSubTab == .peripherals { return peripheralsModel.isRefreshing }
-            return false
+            return powerPortSubTab == .ports && model.isRefreshingCable
+        case .peripherals:
+            return peripheralsModel.isRefreshing
         case .settings:
             return true
         }
@@ -2430,7 +2436,9 @@ private struct DashboardView: View {
     private func performHeroAction() {
         switch selectedSection {
         case .monitor:
-            model.refresh(forceStorageRefresh: monitorSubTab == .storage)
+            model.refresh()
+        case .storage:
+            model.refresh(forceStorageRefresh: true)
         case .traffic:
             switch networkSubTab {
             case .traffic: processNetworkModel.resetSessionTotals()
@@ -2438,11 +2446,12 @@ private struct DashboardView: View {
             case .diagnostics: networkDiagnosticsModel.refresh()
             }
         case .ports:
-            switch hardwareSubTab {
-            case .ports: model.refreshCableMonitor()
+            switch powerPortSubTab {
             case .battery: model.refresh(forceBatteryDiagnosticsRefresh: true)
-            case .peripherals: peripheralsModel.refresh()
+            case .ports: model.refreshCableMonitor()
             }
+        case .peripherals:
+            peripheralsModel.refresh()
         case .settings:
             break
         }
@@ -2451,9 +2460,9 @@ private struct DashboardView: View {
     private var headerSubtitle: String {
         switch selectedSection {
         case .monitor:
-            return monitorSubTab == .storage
-                ? "磁盘实时读写速率、NVMe 健康度与挂载卷宗"
-                : "处理器 P/E 核、GPU、内存与温控实时状态"
+            return "处理器 P/E 核、GPU、内存与温控实时状态"
+        case .storage:
+            return "磁盘实时读写速率、NVMe 健康度与挂载卷宗"
         case .traffic:
             switch networkSubTab {
             case .traffic: return "按应用进程实时统计上下行速率与累计流量"
@@ -2461,11 +2470,12 @@ private struct DashboardView: View {
             case .diagnostics: return "Wi-Fi 信号质量、接口路由配置与实时延迟监控"
             }
         case .ports:
-            switch hardwareSubTab {
-            case .ports: return "USB-C、雷雳接口连接与充电功率协商"
+            switch powerPortSubTab {
             case .battery: return "电池健康度、实时功耗拆解与阻止休眠进程检测"
-            case .peripherals: return "显示器分辨率/刷新率/HDR 与蓝牙无线外设电量"
+            case .ports: return "USB-C、雷雳接口连接与充电功率协商"
             }
+        case .peripherals:
+            return "显示器分辨率/刷新率/HDR 与蓝牙无线外设电量"
         case .settings:
             return "自定义顶部菜单栏显示项、阈值提醒与开机启动"
         }

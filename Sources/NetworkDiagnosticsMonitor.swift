@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import SystemConfiguration
 import CoreWLAN
 
@@ -26,7 +27,9 @@ struct WiFiStatusSnapshot: Equatable {
 struct NetworkConfigSnapshot: Equatable {
     var primaryInterface = "--"
     var localIPv4: String? = nil
+    var localIPv6: String? = nil
     var routerIP: String? = nil
+    var routerIPv6: String? = nil
     var dnsServers: [String] = []
     var proxySummary = "未开启系统代理"
     var isProxyEnabled = false
@@ -53,6 +56,18 @@ enum NetworkDiagnosticsParser {
             .trimmingCharacters(in: .whitespaces)
         guard let value = Double(afterEq), value.isFinite, value >= 0 else { return nil }
         return value
+    }
+
+    static func preferredIPv6(from addresses: [String]) -> String? {
+        let cleaned = addresses
+            .map { $0.split(separator: "%").first.map(String.init) ?? $0 }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && $0 != "::1" }
+        // Prefer global unicast / ULA over link-local fe80::
+        if let global = cleaned.first(where: { !$0.lowercased().hasPrefix("fe80:") }) {
+            return global
+        }
+        return cleaned.first
     }
 }
 
@@ -145,7 +160,9 @@ final class NetworkDiagnosticsCollector: @unchecked Sendable {
 
         var primaryIface = "--"
         var routerIP: String? = nil
+        var routerIPv6: String? = nil
         var primaryServiceID: String? = nil
+        var primaryIPv6ServiceID: String? = nil
 
         if let globalIPv4 = SCDynamicStoreCopyValue(store, "State:/Network/Global/IPv4" as CFString) as? [String: Any] {
             if let iface = globalIPv4["PrimaryInterface"] as? String, !iface.isEmpty {
@@ -153,6 +170,14 @@ final class NetworkDiagnosticsCollector: @unchecked Sendable {
             }
             routerIP = globalIPv4["Router"] as? String
             primaryServiceID = globalIPv4["PrimaryService"] as? String
+        }
+
+        if let globalIPv6 = SCDynamicStoreCopyValue(store, "State:/Network/Global/IPv6" as CFString) as? [String: Any] {
+            if primaryIface == "--", let iface = globalIPv6["PrimaryInterface"] as? String, !iface.isEmpty {
+                primaryIface = iface
+            }
+            routerIPv6 = globalIPv6["Router"] as? String
+            primaryIPv6ServiceID = globalIPv6["PrimaryService"] as? String
         }
 
         var localIPv4: String? = nil
@@ -164,6 +189,21 @@ final class NetworkDiagnosticsCollector: @unchecked Sendable {
            let addresses = serviceIPv4["Addresses"] as? [String] {
             localIPv4 = addresses.first
         }
+
+        var ipv6Candidates: [String] = []
+        for serviceID in Set([primaryIPv6ServiceID, primaryServiceID].compactMap { $0 }) {
+            if let serviceIPv6 = SCDynamicStoreCopyValue(
+                store,
+                "State:/Network/Service/\(serviceID)/IPv6" as CFString
+            ) as? [String: Any],
+               let addresses = serviceIPv6["Addresses"] as? [String] {
+                ipv6Candidates.append(contentsOf: addresses)
+            }
+        }
+        if primaryIface != "--" {
+            ipv6Candidates.append(contentsOf: interfaceIPv6Addresses(interfaceName: primaryIface))
+        }
+        let localIPv6 = NetworkDiagnosticsParser.preferredIPv6(from: ipv6Candidates)
 
         var dnsServers: [String] = []
         if let dns = SCDynamicStoreCopyValue(store, "State:/Network/Global/DNS" as CFString) as? [String: Any],
@@ -193,11 +233,44 @@ final class NetworkDiagnosticsCollector: @unchecked Sendable {
         return NetworkConfigSnapshot(
             primaryInterface: primaryIface,
             localIPv4: localIPv4,
+            localIPv6: localIPv6,
             routerIP: routerIP,
+            routerIPv6: routerIPv6,
             dnsServers: dnsServers,
             proxySummary: proxyParts.isEmpty ? "未开启系统代理" : proxyParts.joined(separator: " · "),
             isProxyEnabled: !proxyParts.isEmpty
         )
+    }
+
+    private func interfaceIPv6Addresses(interfaceName: String) -> [String] {
+        var ifaddrPointer: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddrPointer) == 0, let firstAddr = ifaddrPointer else { return [] }
+        defer { freeifaddrs(ifaddrPointer) }
+
+        var results: [String] = []
+        var pointer: UnsafeMutablePointer<ifaddrs>? = firstAddr
+        while let current = pointer {
+            defer { pointer = current.pointee.ifa_next }
+            guard let addr = current.pointee.ifa_addr,
+                  addr.pointee.sa_family == UInt8(AF_INET6) else { continue }
+            let name = String(cString: current.pointee.ifa_name)
+            guard name == interfaceName else { continue }
+
+            var hostBuffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            let status = getnameinfo(
+                addr,
+                socklen_t(addr.pointee.sa_len),
+                &hostBuffer,
+                socklen_t(hostBuffer.count),
+                nil,
+                0,
+                NI_NUMERICHOST
+            )
+            if status == 0 {
+                results.append(String(cString: hostBuffer))
+            }
+        }
+        return results
     }
 
     private func pingOnce(host: String) -> Double? {
