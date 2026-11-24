@@ -6,22 +6,23 @@ struct StorageView: View {
     let readHistory: [Double]
     let writeHistory: [Double]
     let onEjectVolume: (StorageVolumeSnapshot) -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: InterfaceMetrics.sectionSpacing) {
             HStack(spacing: 12) {
-                ioSummaryCard(
+                MetricSummaryCard(
                     title: "磁盘实时读取",
                     value: storageFormatRate(snapshot.readBytesPerSecond),
                     detail: "系统累计 \(storageFormatBytes(snapshot.totalReadBytes))",
-                    symbol: "arrow.down.circle",
+                    symbol: "arrow.down.circle.fill",
                     tint: InterfacePalette.storage
                 )
-                ioSummaryCard(
+                MetricSummaryCard(
                     title: "磁盘实时写入",
                     value: storageFormatRate(snapshot.writeBytesPerSecond),
                     detail: "系统累计 \(storageFormatBytes(snapshot.totalWriteBytes))",
-                    symbol: "arrow.up.circle",
+                    symbol: "arrow.up.circle.fill",
                     tint: InterfacePalette.upload
                 )
                 driveHealthCard
@@ -33,119 +34,87 @@ struct StorageView: View {
         }
     }
 
-    private func ioSummaryCard(
-        title: String,
-        value: String,
-        detail: String,
-        symbol: String,
-        tint: Color
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(InterfacePalette.textSecondary)
-                Spacer()
-                Image(systemName: symbol)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(tint)
-            }
-            Text(value)
-                .font(.system(size: 22, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-            Text(detail)
-                .font(InterfaceTypography.microMetadata)
-                .foregroundStyle(InterfacePalette.textTertiary)
-                .lineLimit(1)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .stableDashboardCard()
-    }
-
     private var driveHealthCard: some View {
         let drive = snapshot.primaryDrive
         let isHealthy = drive.smartStatus.contains("健康") || drive.smartStatus.contains("已验证")
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("主磁盘健康")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(InterfacePalette.textSecondary)
-                Spacer()
-                Text(drive.smartStatus)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isHealthy ? InterfacePalette.download : InterfacePalette.temperature)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(
-                        (isHealthy ? InterfacePalette.download : InterfacePalette.temperature).opacity(0.12),
-                        in: Capsule()
-                    )
-            }
-            Text(drive.modelName)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-            Text("\(drive.protocolName) · \(drive.isSolidState ? "固态硬盘" : "机械硬盘")")
-                .font(InterfaceTypography.microMetadata)
-                .foregroundStyle(InterfacePalette.textTertiary)
-                .lineLimit(1)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .stableDashboardCard()
+        let healthTint = isHealthy ? InterfacePalette.signal : InterfacePalette.temperature
+        return MetricSummaryCard(
+            title: "主磁盘健康",
+            value: drive.modelName,
+            detail: "\(drive.protocolName) · \(drive.isSolidState ? "固态硬盘" : "机械硬盘")",
+            symbol: "internaldrive.fill",
+            tint: healthTint,
+            badgeText: drive.smartStatus,
+            badgeTint: healthTint
+        )
     }
 
     private var ioHistoryCard: some View {
         let peak = max(1024.0 * 1024.0, (readHistory + writeHistory).max() ?? 0)
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("磁盘读写速率走势（近 2 分钟）")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Spacer()
-                HStack(spacing: 12) {
-                    legendDot(label: "读取", color: InterfacePalette.storage)
-                    legendDot(label: "写入", color: InterfacePalette.upload)
-                    Text("峰值 \(storageFormatRate(peak))")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(InterfacePalette.textTertiary)
+        return VStack(alignment: .leading, spacing: 12) {
+            SectionCardHeader(
+                title: "磁盘读写速率走势",
+                subtitle: "近 2 分钟实时吞吐 · 动态峰值刻度 \(storageFormatRate(peak))",
+                symbol: "chart.xyaxis.line",
+                tint: InterfacePalette.storage
+            ) {
+                HStack(spacing: 8) {
+                    ChartLegendPill(label: "读取", color: InterfacePalette.storage)
+                    ChartLegendPill(label: "写入", color: InterfacePalette.upload)
                 }
             }
 
             GeometryReader { proxy in
+                let size = proxy.size
                 ZStack {
                     Path { path in
                         for step in 1..<4 {
-                            let y = proxy.size.height * CGFloat(step) / 4.0
+                            let y = size.height * CGFloat(step) / 4.0
                             path.move(to: CGPoint(x: 0, y: y))
-                            path.addLine(to: CGPoint(x: proxy.size.width, y: y))
+                            path.addLine(to: CGPoint(x: size.width, y: y))
                         }
                     }
-                    .stroke(InterfacePalette.chartGrid, lineWidth: 1)
+                    .stroke(
+                        InterfacePalette.chartGrid,
+                        style: StrokeStyle(lineWidth: 1, dash: [3, 4])
+                    )
 
-                    seriesPath(values: readHistory, peak: peak, size: proxy.size)
-                        .stroke(InterfacePalette.storage, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                    areaPath(values: readHistory, peak: peak, size: size)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    InterfacePalette.storage.opacity(colorScheme == .dark ? 0.24 : 0.16),
+                                    InterfacePalette.storage.opacity(0.01)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
 
-                    seriesPath(values: writeHistory, peak: peak, size: proxy.size)
-                        .stroke(InterfacePalette.upload, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                    areaPath(values: writeHistory, peak: peak, size: size)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    InterfacePalette.upload.opacity(colorScheme == .dark ? 0.20 : 0.14),
+                                    InterfacePalette.upload.opacity(0.01)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+
+                    seriesPath(values: readHistory, peak: peak, size: size)
+                        .stroke(InterfacePalette.storage, style: StrokeStyle(lineWidth: 2.0, lineCap: .round, lineJoin: .round))
+
+                    seriesPath(values: writeHistory, peak: peak, size: size)
+                        .stroke(InterfacePalette.upload, style: StrokeStyle(lineWidth: 2.0, lineCap: .round, lineJoin: .round))
                 }
             }
-            .frame(height: 84)
+            .frame(height: 98)
+            .clipped()
         }
-        .padding(16)
+        .padding(InterfaceMetrics.cardPadding)
         .stableDashboardCard()
-    }
-
-    private func legendDot(label: String, color: Color) -> some View {
-        HStack(spacing: 5) {
-            Circle().fill(color).frame(width: 6, height: 6)
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(InterfacePalette.textSecondary)
-        }
     }
 
     private func seriesPath(values: [Double], peak: Double, size: CGSize) -> Path {
@@ -165,65 +134,72 @@ struct StorageView: View {
         }
     }
 
+    private func areaPath(values: [Double], peak: Double, size: CGSize) -> Path {
+        var path = seriesPath(values: values, peak: peak, size: size)
+        guard values.count > 1, peak > 0 else { return path }
+        path.addLine(to: CGPoint(x: size.width, y: size.height))
+        path.addLine(to: CGPoint(x: 0, y: size.height))
+        path.closeSubpath()
+        return path
+    }
+
     private var volumesCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("已挂载卷宗")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Spacer()
-                Text("\(snapshot.volumes.count) 个卷宗")
-                    .font(InterfaceTypography.microMetadata)
-                    .foregroundStyle(InterfacePalette.textTertiary)
+            SectionCardHeader(
+                title: "已挂载卷宗",
+                subtitle: "容量占用、可用空间与可清除缓存",
+                symbol: "externaldrive.connected.to.line.below",
+                tint: InterfacePalette.storage
+            ) {
+                StatusBadge(
+                    text: "\(snapshot.volumes.count) 个卷宗",
+                    tint: InterfacePalette.textSecondary
+                )
             }
 
             if snapshot.volumes.isEmpty {
-                Text("正在扫描已挂载存储卷…")
-                    .font(InterfaceTypography.caption)
-                    .foregroundStyle(InterfacePalette.textTertiary)
-                    .padding(.vertical, 12)
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.mini)
+                    Text("正在扫描已挂载存储卷…")
+                        .font(InterfaceTypography.caption)
+                        .foregroundStyle(InterfacePalette.textTertiary)
+                }
+                .padding(.vertical, 12)
             } else {
-                VStack(spacing: 12) {
+                VStack(spacing: 4) {
                     ForEach(Array(snapshot.volumes.enumerated()), id: \.element.id) { index, volume in
                         volumeRow(volume)
                         if index < snapshot.volumes.count - 1 {
-                            Divider().opacity(0.4)
+                            Divider().opacity(0.35)
                         }
                     }
                 }
             }
         }
-        .padding(16)
+        .padding(InterfaceMetrics.cardPadding)
         .stableDashboardCard()
     }
 
     private func volumeRow(_ volume: StorageVolumeSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let barColor = InterfacePalette.loadTint(for: volume.usedPercent, base: InterfacePalette.storage)
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Image(systemName: volume.isInternal ? "internaldrive" : "externaldrive")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(volume.isRoot ? InterfacePalette.storage : InterfacePalette.textSecondary)
-                    .frame(width: 28, height: 28)
-                    .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                IconBadge(
+                    symbol: volume.isInternal ? "internaldrive" : "externaldrive",
+                    tint: volume.isRoot ? InterfacePalette.storage : InterfacePalette.textSecondary,
+                    size: 28,
+                    iconSize: 13,
+                    cornerRadius: 7
+                )
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(volume.name)
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(.primary)
-                        Text(volume.fileSystemType)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(InterfacePalette.textSecondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(Color.primary.opacity(0.06), in: Capsule())
+                        StatusBadge(text: volume.fileSystemType, tint: InterfacePalette.textSecondary)
                         if volume.isRoot {
-                            Text("系统盘")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(InterfacePalette.storage)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 1)
-                                .background(InterfacePalette.storage.opacity(0.12), in: Capsule())
+                            StatusBadge(text: "系统盘", tint: InterfacePalette.storage)
                         }
                     }
                     Text(volume.mountPath)
@@ -252,29 +228,27 @@ struct StorageView: View {
                     Button {
                         onEjectVolume(volume)
                     } label: {
-                        Image(systemName: "eject")
+                        Image(systemName: "eject.fill")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(InterfacePalette.textSecondary)
-                            .frame(width: 26, height: 26)
-                            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .frame(width: 28, height: 28)
+                            .background(InterfacePalette.subtleSurface, in: RoundedRectangle(cornerRadius: 6.5, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6.5, style: .continuous)
+                                    .stroke(InterfacePalette.cardStroke, lineWidth: 0.6)
+                            )
                     }
                     .buttonStyle(.plain)
                     .help("安全推出 \(volume.name)")
+                    .accessibilityLabel("推出 \(volume.name)")
                 }
             }
 
-            GeometryReader { proxy in
-                let usedRatio = min(1, max(0, volume.usedPercent / 100.0))
-                let barColor = volume.usedPercent >= 90 ? InterfacePalette.temperature : InterfacePalette.storage
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.primary.opacity(0.06))
-                    Capsule()
-                        .fill(barColor.opacity(0.82))
-                        .frame(width: proxy.size.width * usedRatio)
-                }
-            }
-            .frame(height: 5)
+            TelemetryProgressBar(progress: volume.usedPercent, tint: barColor, height: 5)
         }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 6)
+        .hoverRowHighlight(cornerRadius: 8)
     }
 }
 

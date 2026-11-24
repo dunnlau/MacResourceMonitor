@@ -8,24 +8,25 @@ struct BatteryDiagnosticsView: View {
     let powerSource: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: InterfaceMetrics.sectionSpacing) {
             if diagnostics.hasBattery {
                 HStack(spacing: 12) {
-                    metricCard(
+                    MetricSummaryCard(
                         title: "电池健康度",
                         value: formattedHealthPercent,
                         detail: capacityDetail,
                         symbol: "heart.fill",
-                        tint: healthTint
+                        tint: healthTint,
+                        progress: diagnostics.healthPercent
                     )
-                    metricCard(
+                    MetricSummaryCard(
                         title: "循环次数",
                         value: diagnostics.cycleCount.map { "\($0) 次" } ?? "--",
                         detail: chargeStatusDetail,
                         symbol: "arrow.triangle.2.circlepath",
                         tint: InterfacePalette.accent
                     )
-                    metricCard(
+                    MetricSummaryCard(
                         title: "电芯温度与电压",
                         value: diagnostics.temperatureCelsius.map { String(format: "%.1f°C", $0) } ?? "--",
                         detail: electricalDetail,
@@ -37,9 +38,7 @@ struct BatteryDiagnosticsView: View {
                 powerBreakdownCard
             } else {
                 HStack(spacing: 12) {
-                    Image(systemName: "desktopcomputer")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(InterfacePalette.textSecondary)
+                    IconBadge(symbol: "desktopcomputer", tint: InterfacePalette.textSecondary, size: 32, iconSize: 15)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("当前设备无内置电池")
                             .font(.system(size: 14, weight: .semibold))
@@ -49,7 +48,7 @@ struct BatteryDiagnosticsView: View {
                     }
                     Spacer()
                 }
-                .padding(16)
+                .padding(InterfaceMetrics.cardPadding)
                 .stableDashboardCard()
             }
 
@@ -121,23 +120,19 @@ struct BatteryDiagnosticsView: View {
             return diagnostics.isCharging ? "检测中" : "未充电"
         }()
 
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("实时功耗拆解")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Spacer()
+        return VStack(alignment: .leading, spacing: 14) {
+            SectionCardHeader(
+                title: "实时功耗拆解",
+                subtitle: "外部适配器输入、电池充放电与整机负载",
+                symbol: "bolt.batteryblock.fill",
+                tint: InterfacePalette.power
+            ) {
                 if let adapterWatts = diagnostics.adapterWatts {
-                    Text("适配器额定 \(adapterWatts) W")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(InterfacePalette.textSecondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Color.primary.opacity(0.06), in: Capsule())
+                    StatusBadge(text: "适配器额定 \(adapterWatts) W", tint: InterfacePalette.power)
                 }
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 powerItem(
                     title: "外部输入功率",
                     value: inputWatts.map { String(format: "%.1f W", $0) } ?? "未接入",
@@ -160,59 +155,64 @@ struct BatteryDiagnosticsView: View {
                 )
             }
         }
-        .padding(16)
+        .padding(InterfaceMetrics.cardPadding)
         .stableDashboardCard()
     }
 
     private func powerItem(title: String, value: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 11))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(InterfacePalette.textTertiary)
             Text(value)
-                .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                .font(.system(size: 16, weight: .bold, design: .monospaced))
                 .foregroundStyle(tint == InterfacePalette.textSecondary ? Color.primary : tint)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            InterfacePalette.subtleSurface,
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(InterfacePalette.cardStroke, lineWidth: 0.65)
+        )
     }
 
     private var sleepAssertionsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                HStack(spacing: 6) {
-                    Image(systemName: "moon.zzz")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(InterfacePalette.accent)
-                    Text("阻止休眠进程检测")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.primary)
-                }
-                Spacer()
-                Text(diagnostics.sleepAssertions.isEmpty ? "无阻止项" : "\(diagnostics.sleepAssertions.count) 个活跃项")
-                    .font(InterfaceTypography.microMetadata)
-                    .foregroundStyle(diagnostics.sleepAssertions.isEmpty ? InterfacePalette.download : InterfacePalette.upload)
+            SectionCardHeader(
+                title: "阻止休眠进程检测",
+                subtitle: "检测阻止系统息屏或进入睡眠的电源断言",
+                symbol: "moon.zzz.fill",
+                tint: InterfacePalette.accent
+            ) {
+                StatusBadge(
+                    text: diagnostics.sleepAssertions.isEmpty ? "无阻止项" : "\(diagnostics.sleepAssertions.count) 个活跃项",
+                    tint: diagnostics.sleepAssertions.isEmpty ? InterfacePalette.signal : InterfacePalette.upload,
+                    showDot: true
+                )
             }
 
             if diagnostics.sleepAssertions.isEmpty {
                 HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle")
+                    Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 13))
-                        .foregroundStyle(InterfacePalette.download)
+                        .foregroundStyle(InterfacePalette.signal)
                     Text("当前没有进程阻止 Mac 正常休眠或息屏。")
                         .font(InterfaceTypography.caption)
                         .foregroundStyle(InterfacePalette.textSecondary)
                 }
                 .padding(.vertical, 4)
             } else {
-                VStack(spacing: 8) {
+                VStack(spacing: 4) {
                     ForEach(Array(diagnostics.sleepAssertions.prefix(12).enumerated()), id: \.element.id) { index, item in
                         HStack(spacing: 10) {
                             Text(item.processName)
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.system(size: 12.5, weight: .semibold))
                                 .foregroundStyle(.primary)
                                 .lineLimit(1)
                                 .frame(width: 140, alignment: .leading)
@@ -222,19 +222,18 @@ struct BatteryDiagnosticsView: View {
                                 .foregroundStyle(InterfacePalette.textTertiary)
                                 .frame(width: 72, alignment: .leading)
 
-                            Text(item.friendlyType)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(InterfacePalette.upload)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 2)
-                                .background(InterfacePalette.upload.opacity(0.11), in: Capsule())
+                            StatusBadge(text: item.friendlyType, tint: InterfacePalette.upload)
 
                             Text(item.reason)
-                                .font(.system(size: 11))
+                                .font(.system(size: 11.5))
                                 .foregroundStyle(InterfacePalette.textSecondary)
                                 .lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .hoverRowHighlight(cornerRadius: 6)
+
                         if index < min(diagnostics.sleepAssertions.count, 12) - 1 {
                             Divider().opacity(0.35)
                         }
@@ -242,39 +241,7 @@ struct BatteryDiagnosticsView: View {
                 }
             }
         }
-        .padding(16)
-        .stableDashboardCard()
-    }
-
-    private func metricCard(
-        title: String,
-        value: String,
-        detail: String,
-        symbol: String,
-        tint: Color
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(InterfacePalette.textSecondary)
-                Spacer()
-                Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(tint)
-            }
-            Text(value)
-                .font(.system(size: 22, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-            Text(detail)
-                .font(InterfaceTypography.microMetadata)
-                .foregroundStyle(InterfacePalette.textTertiary)
-                .lineLimit(1)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(InterfaceMetrics.cardPadding)
         .stableDashboardCard()
     }
 }

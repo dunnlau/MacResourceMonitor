@@ -799,39 +799,46 @@ private struct TelemetryPulseStrip: View {
     let isLoadingExpandedMetrics: Bool
 
     var body: some View {
+        let cpuTint = InterfacePalette.loadTint(for: snapshot.cpuPercent, base: InterfacePalette.cpuSeries)
+        let memTint = InterfacePalette.loadTint(for: snapshot.memoryPercent, base: InterfacePalette.memorySeries)
+        let tempTint = InterfacePalette.temperatureTint(for: snapshot.cpuTemperature)
+        let tempProgress = snapshot.cpuTemperature.map { min(100, max(0, (($0 - 30) / 70) * 100)) }
+
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Circle()
-                    .fill(InterfacePalette.accent)
-                    .frame(width: 6, height: 6)
-                Text("系统实时概览")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Text(
-                    isLoadingExpandedMetrics
-                        ? "正在更新硬件传感器"
-                        : "每 2 秒采样"
+                StatusBadge(
+                    text: isLoadingExpandedMetrics ? "传感器同步中" : "LIVE · 2s",
+                    tint: isLoadingExpandedMetrics ? InterfacePalette.upload : InterfacePalette.signal,
+                    showDot: true
                 )
-                .font(InterfaceTypography.microMetadata)
-                .foregroundStyle(InterfacePalette.textTertiary)
+
+                Text("系统实时遥测")
+                    .font(InterfaceTypography.captionEmphasized)
+                    .foregroundStyle(.primary)
+
                 Spacer()
-                HStack(spacing: 4) {
+
+                HStack(spacing: 5) {
                     Image(systemName: "network")
-                        .font(.system(size: 11))
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(InterfacePalette.accent)
                     Text(snapshot.networkInterface)
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(InterfacePalette.textSecondary)
                 }
-                .foregroundStyle(InterfacePalette.textSecondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(InterfacePalette.subtleSurface, in: Capsule())
             }
 
             HStack(spacing: 0) {
                 TelemetryStripMetric(
                     title: "CPU 负载",
                     value: String(format: "%.0f%%", snapshot.cpuPercent),
-                    detail: "处理器占用",
+                    detail: snapshot.cpuPercent >= 80 ? "高负载运行" : "处理器总占用",
                     progress: snapshot.cpuPercent,
                     symbol: "cpu",
-                    tint: InterfacePalette.cpuSeries
+                    tint: cpuTint
                 )
                 stripDivider
                 TelemetryStripMetric(
@@ -840,7 +847,7 @@ private struct TelemetryPulseStrip: View {
                     detail: formatBytes(snapshot.memoryUsed),
                     progress: snapshot.memoryPercent,
                     symbol: "memorychip",
-                    tint: InterfacePalette.memorySeries
+                    tint: memTint
                 )
                 stripDivider
                 TelemetryStripMetric(
@@ -849,15 +856,15 @@ private struct TelemetryPulseStrip: View {
                     detail: snapshot.hottestCPUTemperature.map {
                         String(format: "峰值 %.1f°C", $0)
                     } ?? "传感器就绪",
-                    progress: nil,
+                    progress: tempProgress,
                     symbol: "thermometer.medium",
-                    tint: InterfacePalette.temperature
+                    tint: tempTint
                 )
                 stripDivider
                 TelemetryStripMetric(
                     title: "网络下行",
                     value: formatRate(snapshot.downloadBytesPerSecond),
-                    detail: "实时接收",
+                    detail: "实时接收速率",
                     progress: nil,
                     symbol: "arrow.down",
                     tint: InterfacePalette.download
@@ -866,7 +873,7 @@ private struct TelemetryPulseStrip: View {
                 TelemetryStripMetric(
                     title: "网络上行",
                     value: formatRate(snapshot.uploadBytesPerSecond),
-                    detail: "实时发送",
+                    detail: "实时发送速率",
                     progress: nil,
                     symbol: "arrow.up",
                     tint: InterfacePalette.upload
@@ -882,7 +889,7 @@ private struct TelemetryPulseStrip: View {
     private var stripDivider: some View {
         Rectangle()
             .fill(InterfacePalette.separator)
-            .frame(width: 1, height: 54)
+            .frame(width: 1, height: 64)
             .padding(.horizontal, 4)
     }
 }
@@ -898,36 +905,28 @@ private struct TelemetryStripMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 7) {
-                Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 22, height: 22)
-                    .background(tint.opacity(0.16), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                IconBadge(symbol: symbol, tint: tint, size: 22, iconSize: 11, cornerRadius: 6)
                 Text(title)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(InterfacePalette.textSecondary)
+                    .lineLimit(1)
             }
+
             Text(value)
-                .font(.system(size: 26, weight: .bold, design: .rounded))
+                .font(InterfaceTypography.heroValue)
                 .monospacedDigit()
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.68)
+
             if let progress {
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(tint.opacity(0.14))
-                        Capsule()
-                            .fill(LinearGradient(colors: [tint.opacity(0.65), tint], startPoint: .leading, endPoint: .trailing))
-                            .frame(width: max(5, geometry.size.width * min(1, max(0, progress / 100))))
-                    }
-                }
-                .frame(height: 5)
+                TelemetryProgressBar(progress: progress, tint: tint, height: 4.5)
             } else {
                 Rectangle()
                     .fill(Color.clear)
-                    .frame(height: 5)
+                    .frame(height: 4.5)
             }
+
             Text(detail)
                 .font(InterfaceTypography.microMetadata)
                 .foregroundStyle(InterfacePalette.textTertiary)
@@ -935,6 +934,7 @@ private struct TelemetryStripMetric: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -969,17 +969,24 @@ private struct CombinedLoadHistory: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline, spacing: 16) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("负载走势")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("最近约 2 分钟 · 同一百分比刻度")
-                        .font(InterfaceTypography.microMetadata)
-                        .foregroundStyle(InterfacePalette.textTertiary)
+            SectionCardHeader(
+                title: "实时负载趋势",
+                subtitle: "近 2 分钟双通道采样 · 悬停查看任意时间点",
+                symbol: "waveform.path.ecg",
+                tint: InterfacePalette.cpuSeries
+            ) {
+                HStack(spacing: 8) {
+                    ChartLegendPill(
+                        label: "CPU",
+                        value: "\(Int(cpuValue.rounded()))%",
+                        color: InterfacePalette.cpuSeries
+                    )
+                    ChartLegendPill(
+                        label: "内存",
+                        value: "\(Int(memoryValue.rounded()))%",
+                        color: InterfacePalette.memorySeries
+                    )
                 }
-                Spacer()
-                chartLegend("CPU", value: cpuValue, color: InterfacePalette.cpuSeries)
-                chartLegend("内存", value: memoryValue, color: InterfacePalette.memorySeries)
             }
 
             GeometryReader { geometry in
@@ -991,8 +998,8 @@ private struct CombinedLoadHistory: View {
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    InterfacePalette.cpuSeries.opacity(0.30),
-                                    InterfacePalette.cpuSeries.opacity(0.02)
+                                    InterfacePalette.cpuSeries.opacity(colorScheme == .dark ? 0.28 : 0.22),
+                                    InterfacePalette.cpuSeries.opacity(0.01)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
@@ -1003,11 +1010,21 @@ private struct CombinedLoadHistory: View {
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    InterfacePalette.memorySeries.opacity(0.20),
+                                    InterfacePalette.memorySeries.opacity(colorScheme == .dark ? 0.20 : 0.14),
                                     InterfacePalette.memorySeries.opacity(0.01)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
+                            )
+                        )
+
+                    linePath(values: memoryValues, in: size)
+                        .stroke(
+                            InterfacePalette.memorySeries,
+                            style: StrokeStyle(
+                                lineWidth: 2.0,
+                                lineCap: .round,
+                                lineJoin: .round
                             )
                         )
 
@@ -1020,15 +1037,10 @@ private struct CombinedLoadHistory: View {
                                 lineJoin: .round
                             )
                         )
-                    linePath(values: memoryValues, in: size)
-                        .stroke(
-                            InterfacePalette.memorySeries,
-                            style: StrokeStyle(
-                                lineWidth: 2.2,
-                                lineCap: .round,
-                                lineJoin: .round
-                            )
-                        )
+
+                    if hoverIndex == nil, sampleCount > 1 {
+                        liveEndpoints(in: size)
+                    }
 
                     if let hoverIndex, sampleCount > 1 {
                         hoverOverlay(index: hoverIndex, in: size)
@@ -1051,21 +1063,21 @@ private struct CombinedLoadHistory: View {
                         }
                 }
             }
-            .frame(height: 170)
+            .frame(height: 174)
             .clipped()
 
             HStack {
                 Text("2 分钟前")
                 Spacer()
-                Text("悬停查看时间点详情")
+                Text(hoverStatusText)
                 Spacer()
                 Text("现在")
             }
-            .font(InterfaceTypography.microMetadata)
+            .font(.system(size: 11, design: .monospaced))
             .foregroundStyle(InterfacePalette.textTertiary)
         }
         .padding(18)
-        .frame(maxWidth: .infinity, minHeight: 268, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 280, alignment: .topLeading)
         .stableDashboardCard(cornerRadius: InterfaceMetrics.cardRadius)
         .transaction { transaction in
             transaction.animation = nil
@@ -1099,17 +1111,34 @@ private struct CombinedLoadHistory: View {
         }
     }
 
-    private func chartLegend(_ title: String, value: Double, color: Color) -> some View {
-        HStack(spacing: 6) {
-            Capsule()
-                .fill(color)
-                .frame(width: 12, height: 3)
-            Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(InterfacePalette.textSecondary)
-            Text("\(Int(value.rounded()))%")
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.primary)
+    private var hoverStatusText: String {
+        guard let hoverIndex, sampleCount > 1 else { return "悬停查看采样点" }
+        let secondsAgo = (sampleCount - 1 - hoverIndex) * 2
+        return secondsAgo == 0 ? "最新采样" : "约 \(secondsAgo) 秒前"
+    }
+
+    @ViewBuilder
+    private func liveEndpoints(in size: CGSize) -> some View {
+        let surface = InterfacePalette.stableDashboardSurface(for: colorScheme)
+        if let lastCPU = cpuValues.last {
+            let y = chartY(lastCPU, height: size.height)
+            Circle()
+                .fill(InterfacePalette.cpuSeries.opacity(0.26))
+                .frame(width: 12, height: 12)
+                .position(x: size.width - 3, y: y)
+            Circle()
+                .fill(InterfacePalette.cpuSeries)
+                .overlay(Circle().stroke(surface, lineWidth: 1.5))
+                .frame(width: 6.5, height: 6.5)
+                .position(x: size.width - 3, y: y)
+        }
+        if let lastMemory = memoryValues.last {
+            let y = chartY(lastMemory, height: size.height)
+            Circle()
+                .fill(InterfacePalette.memorySeries)
+                .overlay(Circle().stroke(surface, lineWidth: 1.5))
+                .frame(width: 6, height: 6)
+                .position(x: size.width - 3, y: y)
         }
     }
 
@@ -1121,13 +1150,16 @@ private struct CombinedLoadHistory: View {
                     path.move(to: CGPoint(x: 0, y: y))
                     path.addLine(to: CGPoint(x: size.width, y: y))
                 }
-                .stroke(InterfacePalette.chartGrid, lineWidth: 1)
+                .stroke(
+                    InterfacePalette.chartGrid,
+                    style: StrokeStyle(lineWidth: 1, dash: step == 4 ? [] : [3, 4])
+                )
             }
             ForEach([0, 2, 4], id: \.self) { step in
                 Text("\(100 - step * 25)%")
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(InterfacePalette.textTertiary)
-                    .position(x: 16, y: size.height * CGFloat(step) / 4 + (step == 0 ? 9 : -9))
+                    .position(x: 18, y: size.height * CGFloat(step) / 4 + (step == 0 ? 9 : -9))
             }
         }
     }
@@ -1140,12 +1172,14 @@ private struct CombinedLoadHistory: View {
         let cpuY = chartY(cpu, height: size.height)
         let memoryY = chartY(memory, height: size.height)
         let surface = InterfacePalette.stableDashboardSurface(for: colorScheme)
+        let secondsAgo = (sampleCount - 1 - index) * 2
+        let timeLabel = secondsAgo == 0 ? "现在" : "-\(secondsAgo)s"
 
         Path { path in
             path.move(to: CGPoint(x: x, y: 0))
             path.addLine(to: CGPoint(x: x, y: size.height))
         }
-        .stroke(InterfacePalette.crosshair, lineWidth: 1)
+        .stroke(InterfacePalette.crosshair, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
 
         Circle()
             .fill(InterfacePalette.cpuSeries)
@@ -1160,22 +1194,39 @@ private struct CombinedLoadHistory: View {
             .position(x: x, y: memoryY)
 
         VStack(alignment: .leading, spacing: 3) {
-            Text("CPU  \(Int(cpu.rounded()))%")
-            Text("内存  \(Int(memory.rounded()))%")
+            Text(timeLabel)
+                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                .foregroundStyle(InterfacePalette.textTertiary)
+            HStack(spacing: 5) {
+                Circle().fill(InterfacePalette.cpuSeries).frame(width: 5, height: 5)
+                Text("CPU \(Int(cpu.rounded()))%")
+            }
+            HStack(spacing: 5) {
+                Circle().fill(InterfacePalette.memorySeries).frame(width: 5, height: 5)
+                Text("内存 \(Int(memory.rounded()))%")
+            }
         }
-        .font(.system(size: 11, weight: .medium, design: .monospaced))
-        .padding(.horizontal, 8)
+        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+        .padding(.horizontal, 9)
         .padding(.vertical, 6)
         .background(
-            .regularMaterial,
+            surface.opacity(0.95),
             in: RoundedRectangle(
                 cornerRadius: InterfaceMetrics.controlRadius,
                 style: .continuous
             )
         )
+        .overlay(
+            RoundedRectangle(
+                cornerRadius: InterfaceMetrics.controlRadius,
+                style: .continuous
+            )
+            .stroke(InterfacePalette.cardStroke, lineWidth: 0.8)
+        )
+        .shadow(color: InterfacePalette.cardShadow(for: colorScheme), radius: 6, y: 2)
         .position(
-            x: min(max(58, x), max(58, size.width - 58)),
-            y: 27
+            x: min(max(62, x), max(62, size.width - 62)),
+            y: 34
         )
     }
 
@@ -1213,15 +1264,19 @@ private struct HardwareTelemetryPanel: View {
     let isLoadingExpandedMetrics: Bool
 
     var body: some View {
+        let diskTint = InterfacePalette.loadTint(for: snapshot.diskPercent, base: InterfacePalette.storage)
+        let thermalTint: Color = snapshot.thermalState.contains("正常")
+            ? InterfacePalette.signal
+            : InterfacePalette.temperature
+
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("硬件与电源")
-                    .font(.system(size: 14, weight: .semibold))
-                Text(isLoadingExpandedMetrics ? "正在读取传感器" : "传感器状态")
-                    .font(InterfaceTypography.microMetadata)
-                    .foregroundStyle(InterfacePalette.textTertiary)
-            }
-            .padding(.bottom, 13)
+            SectionCardHeader(
+                title: "硬件与电源",
+                subtitle: isLoadingExpandedMetrics ? "正在读取传感器" : "板载传感器实时状态",
+                symbol: "cpu.fill",
+                tint: InterfacePalette.storage
+            )
+            .padding(.bottom, 12)
 
             hardwareRow(
                 "内置磁盘",
@@ -1229,7 +1284,7 @@ private struct HardwareTelemetryPanel: View {
                     ? "--"
                     : "\(Int(snapshot.diskPercent.rounded()))% 已用",
                 symbol: "internaldrive",
-                tint: InterfacePalette.storage,
+                tint: diskTint,
                 progress: isLoadingExpandedMetrics ? nil : snapshot.diskPercent
             )
             rowDivider
@@ -1252,7 +1307,7 @@ private struct HardwareTelemetryPanel: View {
                 isLoadingExpandedMetrics
                     ? "--"
                     : formatBatteryChargePower(snapshot.chargingPower),
-                symbol: "bolt",
+                symbol: "bolt.fill",
                 tint: InterfacePalette.power
             )
             rowDivider
@@ -1260,12 +1315,13 @@ private struct HardwareTelemetryPanel: View {
                 "系统温控",
                 isLoadingExpandedMetrics ? "检测中" : snapshot.thermalState,
                 symbol: "thermometer.medium",
-                tint: InterfacePalette.temperature
+                tint: thermalTint,
+                valueBadgeTint: isLoadingExpandedMetrics ? nil : thermalTint
             )
         }
         .padding(18)
-        .frame(width: 320, alignment: .topLeading)
-        .frame(minHeight: 268, alignment: .topLeading)
+        .frame(width: 326, alignment: .topLeading)
+        .frame(minHeight: 280, alignment: .topLeading)
         .stableDashboardCard(cornerRadius: InterfaceMetrics.cardRadius)
     }
 
@@ -1274,41 +1330,31 @@ private struct HardwareTelemetryPanel: View {
         _ value: String,
         symbol: String,
         tint: Color = InterfacePalette.accent,
-        progress: Double? = nil
+        progress: Double? = nil,
+        valueBadgeTint: Color? = nil
     ) -> some View {
         VStack(spacing: 6) {
             HStack(spacing: 10) {
-                Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 26, height: 26)
-                    .background(tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                IconBadge(symbol: symbol, tint: tint, size: 25, iconSize: 11.5, cornerRadius: 6.5)
                 Text(label)
                     .font(InterfaceTypography.caption)
                     .foregroundStyle(InterfacePalette.textSecondary)
                 Spacer()
-                Text(value)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+                if let valueBadgeTint {
+                    StatusBadge(text: value, tint: valueBadgeTint)
+                } else {
+                    Text(value)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
             }
             if let progress {
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(tint.opacity(0.14))
-                        Capsule()
-                            .fill(LinearGradient(colors: [tint.opacity(0.65), tint], startPoint: .leading, endPoint: .trailing))
-                            .frame(
-                                width: max(5, geometry.size.width
-                                    * min(1, max(0, progress / 100)))
-                            )
-                    }
-                }
-                .frame(height: 5)
-                .padding(.leading, 36)
+                TelemetryProgressBar(progress: progress, tint: tint, height: 4.5)
+                    .padding(.leading, 35)
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 8.5)
     }
 
     private var rowDivider: some View {
@@ -1322,50 +1368,99 @@ private struct ProcessTable: View {
     let rows: [ProcessRow]
 
     var body: some View {
+        let maxCPU = max(10.0, rows.map(\.cpu).max() ?? 10.0)
+
         VStack(alignment: .leading, spacing: 10) {
-            Text("高负载进程")
-                .font(.system(size: 14, weight: .semibold))
-            HStack {
-                Text("进程").frame(maxWidth: .infinity, alignment: .leading)
-                Text("PID").frame(width: 64, alignment: .trailing)
-                Text("CPU").frame(width: 64, alignment: .trailing)
-                Text("内存").frame(width: 78, alignment: .trailing)
+            SectionCardHeader(
+                title: "高负载进程",
+                subtitle: "按实时 CPU 占用排序",
+                symbol: "flame.fill",
+                tint: InterfacePalette.upload
+            ) {
+                Text("TOP \(max(rows.count, 5))")
+                    .font(InterfaceTypography.eyebrow)
+                    .foregroundStyle(InterfacePalette.textTertiary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(InterfacePalette.subtleSurface, in: Capsule())
+            }
+
+            HStack(spacing: 8) {
+                Text("进程")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("PID")
+                    .frame(width: 58, alignment: .trailing)
+                Text("CPU")
+                    .frame(width: 84, alignment: .trailing)
+                Text("内存")
+                    .frame(width: 76, alignment: .trailing)
             }
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(InterfacePalette.textTertiary)
+            .padding(.horizontal, 8)
+            .padding(.top, 2)
+
+            Divider().opacity(0.45)
 
             if rows.isEmpty {
                 Spacer()
-                Text("正在读取进程…")
-                    .font(.system(size: 12))
-                    .foregroundStyle(InterfacePalette.textSecondary)
-                    .frame(maxWidth: .infinity)
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.mini)
+                    Text("正在读取进程…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(InterfacePalette.textSecondary)
+                }
+                .frame(maxWidth: .infinity)
                 Spacer()
             } else {
-                ForEach(rows) { row in
-                    HStack(spacing: 8) {
-                        Text(row.name)
-                            .font(.system(size: 12, weight: .medium))
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Text("\(row.id)")
-                            .foregroundStyle(InterfacePalette.textTertiary)
-                            .frame(width: 64, alignment: .trailing)
-                        Text(String(format: "%.1f%%", row.cpu))
-                            .fontWeight(.medium)
-                            .frame(width: 64, alignment: .trailing)
-                        Text(formatBytes(row.memoryBytes))
-                            .foregroundStyle(InterfacePalette.textSecondary)
-                            .frame(width: 78, alignment: .trailing)
+                VStack(spacing: 2) {
+                    ForEach(rows) { row in
+                        let ratio = min(1, max(0, row.cpu / maxCPU))
+                        let cpuColor = InterfacePalette.loadTint(for: row.cpu, base: InterfacePalette.cpuSeries)
+
+                        HStack(spacing: 8) {
+                            Text(row.name)
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Text("\(row.id)")
+                                .foregroundStyle(InterfacePalette.textTertiary)
+                                .frame(width: 58, alignment: .trailing)
+
+                            HStack(spacing: 6) {
+                                GeometryReader { proxy in
+                                    ZStack(alignment: .leading) {
+                                        Capsule().fill(cpuColor.opacity(0.14))
+                                        Capsule()
+                                            .fill(cpuColor)
+                                            .frame(width: max(3, proxy.size.width * ratio))
+                                    }
+                                }
+                                .frame(width: 28, height: 4)
+
+                                Text(String(format: "%.1f%%", row.cpu))
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(row.cpu >= 50 ? cpuColor : Color.primary)
+                            }
+                            .frame(width: 84, alignment: .trailing)
+
+                            Text(formatBytes(row.memoryBytes))
+                                .foregroundStyle(InterfacePalette.textSecondary)
+                                .frame(width: 76, alignment: .trailing)
+                        }
+                        .font(.system(size: 12, design: .monospaced))
+                        .monospacedDigit()
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .hoverRowHighlight(cornerRadius: 6)
                     }
-                    .font(.system(size: 12, design: .monospaced))
-                    .monospacedDigit()
-                    if row.id != rows.last?.id { Divider().opacity(0.35) }
                 }
             }
         }
         .padding(18)
-        .frame(maxWidth: .infinity, minHeight: 225, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 238, alignment: .topLeading)
         .stableDashboardCard()
     }
 }
@@ -1375,43 +1470,59 @@ private struct SystemDetails: View {
     let isLoadingExpandedMetrics: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("系统环境").font(.system(size: 14, weight: .semibold))
-            detail("网络接口", snapshot.networkInterface, "network")
-            Divider().opacity(0.35)
-            detail("供电方式", isLoadingExpandedMetrics ? "检测中" : snapshot.powerSource, "bolt")
-            Divider().opacity(0.35)
-            detail("电池状态", isLoadingExpandedMetrics ? "检测中" : snapshot.batteryText, "battery.75percent")
-            Divider().opacity(0.35)
-            detail("温控状态", isLoadingExpandedMetrics ? "检测中" : snapshot.thermalState, "thermometer.medium")
-            Divider().opacity(0.35)
-            detail("持续运行", isLoadingExpandedMetrics ? "检测中" : formatUptime(snapshot.uptime), "clock")
-            Divider().opacity(0.35)
-            detail("主机名称", Host.current().localizedName ?? "Mac", "desktopcomputer")
+        VStack(alignment: .leading, spacing: 10) {
+            SectionCardHeader(
+                title: "系统环境",
+                subtitle: "主机与运行上下文",
+                symbol: "desktopcomputer",
+                tint: InterfacePalette.accent
+            )
+            .padding(.bottom, 2)
+
+            VStack(spacing: 0) {
+                detail("网络接口", snapshot.networkInterface, "network")
+                rowDivider
+                detail("供电方式", isLoadingExpandedMetrics ? "检测中" : snapshot.powerSource, "bolt")
+                rowDivider
+                detail("电池状态", isLoadingExpandedMetrics ? "检测中" : snapshot.batteryText, "battery.75percent")
+                rowDivider
+                detail("温控状态", isLoadingExpandedMetrics ? "检测中" : snapshot.thermalState, "thermometer.medium")
+                rowDivider
+                detail("持续运行", isLoadingExpandedMetrics ? "检测中" : formatUptime(snapshot.uptime), "clock")
+                rowDivider
+                detail("主机名称", Host.current().localizedName ?? "Mac", "macbook")
+            }
         }
         .padding(18)
-        .frame(width: 320, alignment: .topLeading)
-        .frame(minHeight: 225, alignment: .topLeading)
+        .frame(width: 326, alignment: .topLeading)
+        .frame(minHeight: 238, alignment: .topLeading)
         .stableDashboardCard()
     }
 
     private func detail(_ label: String, _ value: String, _ symbol: String) -> some View {
         HStack(spacing: 9) {
             Image(systemName: symbol)
-                .font(.system(size: 12))
+                .font(.system(size: 11.5, weight: .medium))
                 .frame(width: 16)
-                .foregroundStyle(InterfacePalette.textSecondary)
+                .foregroundStyle(InterfacePalette.textTertiary)
             Text(label)
                 .font(InterfaceTypography.caption)
                 .foregroundStyle(InterfacePalette.textSecondary)
             Spacer()
             Text(value)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.85)
+                .minimumScaleFactor(0.82)
                 .allowsTightening(true)
         }
+        .padding(.vertical, 7)
+    }
+
+    private var rowDivider: some View {
+        Rectangle()
+            .fill(InterfacePalette.separator)
+            .frame(height: 1)
     }
 }
 
@@ -1426,10 +1537,34 @@ private struct CableSection: View {
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                MetricSummaryCard(
+                    title: "物理端口总数",
+                    value: "\(monitor.ports.count)",
+                    detail: "USB-C / 雷雳 / MagSafe",
+                    symbol: "cable.connector",
+                    tint: InterfacePalette.accent
+                )
+                MetricSummaryCard(
+                    title: "已连接端口",
+                    value: "\(monitor.activePorts.count)",
+                    detail: monitor.activePorts.isEmpty ? "当前无外接设备" : "已建立数据或供电链路",
+                    symbol: "bolt.horizontal.fill",
+                    tint: monitor.activePorts.isEmpty ? InterfacePalette.textSecondary : InterfacePalette.signal
+                )
+                MetricSummaryCard(
+                    title: "外部输入功率",
+                    value: chargingPower.inputWatts.map { String(format: "%.1f W", $0) } ?? "未接入",
+                    detail: chargingPower.externalConnected ? "实时适配器输入" : "当前未接通外部电源",
+                    symbol: "powerplug.fill",
+                    tint: InterfacePalette.power
+                )
+            }
+
+            HStack(alignment: .center) {
                 Text("USB-C / 雷雳端口状态")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(InterfaceTypography.cardTitle)
                 Spacer()
                 if isRefreshing {
                     HStack(spacing: 6) {
@@ -1439,23 +1574,23 @@ private struct CableSection: View {
                             .foregroundStyle(InterfacePalette.textSecondary)
                     }
                 } else if let errorText = monitor.errorText {
-                    Label(errorText, systemImage: "exclamationmark.triangle")
-                        .font(InterfaceTypography.microMetadata)
-                        .foregroundStyle(.orange)
+                    StatusBadge(text: errorText, tint: InterfacePalette.upload)
                 } else {
-                    Text("共 \(monitor.ports.count) 个端口 · \(monitor.activePorts.count) 个已连接")
-                        .font(InterfaceTypography.microMetadata)
-                        .foregroundStyle(InterfacePalette.textSecondary)
+                    StatusBadge(
+                        text: "\(monitor.activePorts.count) / \(monitor.ports.count) 已连接",
+                        tint: monitor.activePorts.isEmpty ? InterfacePalette.textSecondary : InterfacePalette.signal,
+                        showDot: !monitor.activePorts.isEmpty
+                    )
                 }
             }
 
             if isRefreshing {
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     ProgressView()
                         .controlSize(.small)
                     VStack(alignment: .leading, spacing: 3) {
                         Text("正在检测 USB-C 与线缆状态")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.system(size: 13, weight: .semibold))
                         Text("检测完成后会更新端口连接与供电速率")
                             .font(InterfaceTypography.caption)
                             .foregroundStyle(InterfacePalette.textSecondary)
@@ -1465,13 +1600,11 @@ private struct CableSection: View {
                 .padding(16)
                 .stableDashboardCard()
             } else if monitor.ports.isEmpty {
-                HStack(spacing: 10) {
-                    Image(systemName: "cable.connector.slash")
-                        .font(.system(size: 20))
-                        .foregroundStyle(InterfacePalette.textSecondary)
+                HStack(spacing: 12) {
+                    IconBadge(symbol: "cable.connector.slash", tint: InterfacePalette.textSecondary, size: 32, iconSize: 15)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(monitor.errorText ?? "未发现可读取的 USB-C 端口")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.system(size: 13, weight: .semibold))
                         Text("需要 Apple Silicon 芯片与 macOS 14 及以上系统")
                             .font(InterfaceTypography.caption)
                             .foregroundStyle(InterfacePalette.textSecondary)
@@ -1526,31 +1659,35 @@ private struct CablePortCard: View {
 
     private var symbol: String {
         if !port.connected { return "cable.connector.slash" }
-        if port.activeTransports.contains("Thunderbolt/USB4") { return "bolt.horizontal" }
+        if port.activeTransports.contains("Thunderbolt/USB4") { return "bolt.horizontal.fill" }
         if port.activeTransports.contains("DisplayPort") { return "display" }
         return "cable.connector"
+    }
+
+    private var portTint: Color {
+        if !port.connected { return InterfacePalette.textTertiary }
+        if port.negotiatedPower != nil { return InterfacePalette.power }
+        return InterfacePalette.accent
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Image(systemName: symbol)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(port.connected ? .primary : .secondary)
-                    .frame(width: 30, height: 30)
-                    .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                IconBadge(symbol: symbol, tint: portTint, size: 30, iconSize: 13.5, cornerRadius: 8)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(port.displayName)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 13.5, weight: .semibold))
                     Text(port.stateTitle)
                         .font(InterfaceTypography.microMetadata)
-                        .foregroundStyle(port.connected ? .primary : .tertiary)
+                        .foregroundStyle(port.connected ? InterfacePalette.textSecondary : InterfacePalette.textTertiary)
                 }
                 Spacer()
-                Circle()
-                    .fill(port.connected ? InterfacePalette.accent : Color.primary.opacity(0.18))
-                    .frame(width: 6, height: 6)
+                StatusBadge(
+                    text: port.connected ? "已连接" : "空闲",
+                    tint: port.connected ? InterfacePalette.signal : InterfacePalette.textTertiary,
+                    showDot: port.connected
+                )
             }
 
             Text(port.stateDetail)
@@ -1559,10 +1696,10 @@ private struct CablePortCard: View {
                 .lineLimit(2)
 
             if port.connected {
-                Divider().opacity(0.35)
+                Divider().opacity(0.4)
                 VStack(spacing: 7) {
                     if let value = port.negotiatedPower {
-                        cableDetail("协商上限", value, "bolt")
+                        cableDetail("协商上限", value, "bolt.fill")
                     }
                     if let watts = liveInputWatts {
                         cableDetail("实时输入", String(format: "%.1f W", watts), "gauge.with.dots.needle.50percent")
@@ -1584,11 +1721,12 @@ private struct CablePortCard: View {
                     }
                     if let value = port.warning {
                         HStack(alignment: .top, spacing: 7) {
-                            Image(systemName: "exclamationmark.triangle")
-                                .foregroundStyle(.orange)
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(InterfacePalette.upload)
                             Text(value)
                                 .font(InterfaceTypography.microMetadata)
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(InterfacePalette.upload)
                             Spacer()
                         }
                         .padding(.top, 2)
@@ -1610,21 +1748,22 @@ private struct CablePortCard: View {
             }
         }
         .padding(16)
-        .frame(maxWidth: .infinity, minHeight: port.connected ? 170 : 124, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: port.connected ? 174 : 126, alignment: .topLeading)
         .stableDashboardCard()
     }
 
     private func cableDetail(_ label: String, _ value: String, _ symbol: String) -> some View {
         HStack(spacing: 7) {
             Image(systemName: symbol)
+                .font(.system(size: 11))
                 .frame(width: 14)
-                .foregroundStyle(InterfacePalette.textSecondary)
+                .foregroundStyle(InterfacePalette.textTertiary)
             Text(label)
                 .font(InterfaceTypography.caption)
                 .foregroundStyle(InterfacePalette.textSecondary)
             Spacer(minLength: 8)
             Text(value)
-                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
@@ -1696,199 +1835,6 @@ private enum PowerPortSubTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-enum InterfaceMetrics {
-    static let shellRadius: CGFloat = 14
-    static let panelRadius: CGFloat = 12
-    static let cardRadius: CGFloat = 11
-    static let controlRadius: CGFloat = 8
-    static let compactRadius: CGFloat = 5
-    static let shellInset: CGFloat = 12
-    static let sidebarWidth: CGFloat = 196
-}
-
-enum InterfaceTypography {
-    static let microMetadata = Font.system(size: 12, weight: .regular)
-    static let microEmphasized = Font.system(size: 12, weight: .medium)
-    static let caption = Font.system(size: 13)
-    static let captionMedium = Font.system(size: 13, weight: .medium)
-    static let captionEmphasized = Font.system(size: 13, weight: .semibold)
-    static let body = Font.system(size: 13)
-    static let bodyEmphasized = Font.system(size: 13, weight: .semibold)
-    static let compactValue = Font.system(size: 12, weight: .semibold, design: .monospaced)
-}
-
-enum InterfacePalette {
-    // 重新设计的配色：偏蓝的深色底 + 更亮的层级卡片，文字分三级且保证对比度，
-    // 各项指标使用彼此区分的语义色，而不是一片灰色。
-
-    /// 随系统外观自动切换的动态颜色。
-    static func dynamic(light: (Double, Double, Double, Double), dark: (Double, Double, Double, Double)) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            let c = isDark ? dark : light
-            return NSColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: c.3)
-        })
-    }
-
-    // 文字层级
-    static let textSecondary = dynamic(light: (0.10, 0.12, 0.18, 0.68), dark: (0.93, 0.95, 1.00, 0.76))
-    static let textTertiary = dynamic(light: (0.10, 0.12, 0.18, 0.52), dark: (0.93, 0.95, 1.00, 0.56))
-
-    // 品牌与指标色
-    static let accent = dynamic(light: (0.04, 0.42, 0.96, 1), dark: (0.36, 0.64, 1.00, 1))
-    static let signal = accent
-    static let cpuSeries = accent
-    static let memorySeries = dynamic(light: (0.56, 0.36, 0.91, 1), dark: (0.69, 0.52, 1.00, 1))
-    static let temperature = dynamic(light: (0.88, 0.27, 0.22, 1), dark: (1.00, 0.42, 0.36, 1))
-    static let download = dynamic(light: (0.10, 0.62, 0.38, 1), dark: (0.25, 0.80, 0.52, 1))
-    static let upload = dynamic(light: (0.90, 0.50, 0.10, 1), dark: (1.00, 0.63, 0.28, 1))
-    static let storage = dynamic(light: (0.05, 0.60, 0.72, 1), dark: (0.28, 0.78, 0.88, 1))
-    static let fan = dynamic(light: (0.10, 0.56, 0.66, 1), dark: (0.40, 0.82, 0.86, 1))
-    static let battery = download
-    static let power = dynamic(light: (0.78, 0.54, 0.02, 1), dark: (0.96, 0.76, 0.26, 1))
-
-    static let iconSurface = Color.primary.opacity(0.07)
-    static let cardStroke = Color.primary.opacity(0.11)
-    static let separator = Color.primary.opacity(0.09)
-    static let chartGrid = Color.primary.opacity(0.07)
-    static let crosshair = Color.primary.opacity(0.30)
-
-    static func canvas(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 0.050, green: 0.062, blue: 0.086)
-            : Color(red: 0.925, green: 0.937, blue: 0.962)
-    }
-
-    static func sidebarSurface(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 0.072, green: 0.086, blue: 0.118)
-            : Color(red: 0.962, green: 0.969, blue: 0.984)
-    }
-
-    static func glassSurface(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color.white.opacity(0.075) : Color.white.opacity(0.92)
-    }
-
-    static func stableSurface(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color.white.opacity(0.07) : Color.white.opacity(0.92)
-    }
-
-    static func stableDashboardSurface(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? Color.white.opacity(0.08) : Color.white.opacity(0.96)
-    }
-
-    static func menuSurface(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark
-            ? Color(red: 0.075, green: 0.088, blue: 0.120)
-            : Color(red: 0.955, green: 0.963, blue: 0.980)
-    }
-
-    /// 浅色模式下卡片的柔和投影；深色模式靠描边与更亮的底色区分层级。
-    static func cardShadow(for colorScheme: ColorScheme) -> Color {
-        colorScheme == .dark ? .clear : Color(red: 0.12, green: 0.18, blue: 0.32).opacity(0.10)
-    }
-}
-
-struct GlassCardModifier: ViewModifier {
-    let cornerRadius: CGFloat
-    @Environment(\.colorScheme) private var colorScheme
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        content
-            .background(InterfacePalette.glassSurface(for: colorScheme), in: shape)
-            .overlay(shape.stroke(InterfacePalette.cardStroke, lineWidth: 0.8))
-            .clipShape(shape)
-            .shadow(color: InterfacePalette.cardShadow(for: colorScheme), radius: 10, y: 3)
-    }
-}
-
-struct LiquidGlassPanelModifier: ViewModifier {
-    let cornerRadius: CGFloat
-    let isDense: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        content
-            .background(
-                isDense
-                    ? InterfacePalette.sidebarSurface(for: colorScheme)
-                    : InterfacePalette.stableDashboardSurface(for: colorScheme),
-                in: shape
-            )
-            .overlay(
-                shape.stroke(
-                    InterfacePalette.cardStroke,
-                    lineWidth: 0.6
-                )
-            )
-            .clipShape(shape)
-    }
-}
-
-struct StableListCardModifier: ViewModifier {
-    let cornerRadius: CGFloat
-    @Environment(\.colorScheme) private var colorScheme
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        content
-            .background(
-                InterfacePalette.stableSurface(for: colorScheme),
-                in: shape
-            )
-            .overlay(shape.stroke(InterfacePalette.cardStroke, lineWidth: 0.6))
-            .clipShape(shape)
-    }
-}
-
-struct StableDashboardCardModifier: ViewModifier {
-    let cornerRadius: CGFloat
-    @Environment(\.colorScheme) private var colorScheme
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        content
-            .background(
-                LinearGradient(
-                    colors: colorScheme == .dark
-                        ? [Color.white.opacity(0.115), Color.white.opacity(0.055)]
-                        : [Color.white.opacity(0.99), Color.white.opacity(0.88)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                ),
-                in: shape
-            )
-            .overlay(
-                shape.stroke(
-                    colorScheme == .dark
-                        ? LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.05)], startPoint: .top, endPoint: .bottom)
-                        : LinearGradient(colors: [InterfacePalette.cardStroke, InterfacePalette.cardStroke], startPoint: .top, endPoint: .bottom),
-                    lineWidth: 0.9
-                )
-            )
-            .clipShape(shape)
-            .shadow(color: InterfacePalette.cardShadow(for: colorScheme), radius: 10, y: 3)
-    }
-}
-
-struct StableMenuCardModifier: ViewModifier {
-    let cornerRadius: CGFloat
-    @Environment(\.colorScheme) private var colorScheme
-
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        content
-            .background(
-                Color.primary.opacity(colorScheme == .dark ? 0.05 : 0.035),
-                in: shape
-            )
-            .overlay(shape.stroke(InterfacePalette.cardStroke, lineWidth: 0.6))
-            .clipShape(shape)
-    }
-}
-
 @MainActor
 private final class TransparentWindowBridgeView: NSView {
     private weak var configuredWindow: NSWindow?
@@ -1930,42 +1876,6 @@ private struct WindowTransparencyConfigurator: NSViewRepresentable {
     }
 }
 
-extension View {
-    func glassCard(cornerRadius: CGFloat = InterfaceMetrics.cardRadius) -> some View {
-        modifier(GlassCardModifier(cornerRadius: cornerRadius))
-    }
-
-    func liquidGlassPanel(
-        cornerRadius: CGFloat = InterfaceMetrics.panelRadius,
-        isDense: Bool = false
-    ) -> some View {
-        modifier(
-            LiquidGlassPanelModifier(
-                cornerRadius: cornerRadius,
-                isDense: isDense
-            )
-        )
-    }
-
-    func stableListCard(
-        cornerRadius: CGFloat = InterfaceMetrics.cardRadius
-    ) -> some View {
-        modifier(StableListCardModifier(cornerRadius: cornerRadius))
-    }
-
-    func stableDashboardCard(
-        cornerRadius: CGFloat = InterfaceMetrics.cardRadius
-    ) -> some View {
-        modifier(StableDashboardCardModifier(cornerRadius: cornerRadius))
-    }
-
-    func stableMenuCard(
-        cornerRadius: CGFloat = InterfaceMetrics.cardRadius
-    ) -> some View {
-        modifier(StableMenuCardModifier(cornerRadius: cornerRadius))
-    }
-}
-
 private struct SidebarNavigationItem: View {
     let section: DashboardSection
     let isSelected: Bool
@@ -1976,66 +1886,90 @@ private struct SidebarNavigationItem: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: section.symbol)
-                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? InterfacePalette.accent : InterfacePalette.textSecondary)
-                    .frame(width: 20)
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(isSelected ? InterfacePalette.accent : Color.clear)
+                    .frame(width: 3, height: 16)
 
-                Text(section.rawValue)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? Color.primary : Color.primary.opacity(0.82))
-                    .lineLimit(1)
+                Image(systemName: section.symbol)
+                    .font(.system(size: 13.5, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected ? InterfacePalette.accent : InterfacePalette.textSecondary)
+                    .frame(width: 18)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(section.rawValue)
+                        .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                        .foregroundStyle(isSelected ? Color.primary : InterfacePalette.textSecondary)
+                        .lineLimit(1)
+                }
 
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 10)
-            .frame(height: 34)
+            .padding(.leading, 4)
+            .padding(.trailing, 10)
+            .frame(height: 36)
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(
-                    cornerRadius: 8,
+                    cornerRadius: 9,
                     style: .continuous
                 )
                 .fill(
                     isSelected
-                        ? InterfacePalette.accent.opacity(colorScheme == .dark ? 0.22 : 0.13)
-                        : Color.primary.opacity(isHovering ? 0.04 : 0)
+                        ? InterfacePalette.accent.opacity(colorScheme == .dark ? 0.16 : 0.11)
+                        : (isHovering ? InterfacePalette.hoverFill : Color.clear)
+                )
+            )
+            .overlay(
+                RoundedRectangle(
+                    cornerRadius: 9,
+                    style: .continuous
+                )
+                .stroke(
+                    isSelected ? InterfacePalette.accent.opacity(0.24) : Color.clear,
+                    lineWidth: 0.7
                 )
             )
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
+        .accessibilityLabel(section.rawValue)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
 private struct SectionSegmentedControl<Tab: CaseIterable & Identifiable & RawRepresentable & Hashable>: View where Tab.RawValue == String {
     @Binding var selection: Tab
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(Array(Tab.allCases)) { option in
                 let isSelected = selection == option
                 Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
+                    if reduceMotion {
                         selection = option
+                    } else {
+                        withAnimation(.easeInOut(duration: 0.16)) {
+                            selection = option
+                        }
                     }
                 } label: {
                     Text(option.rawValue)
-                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                        .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
                         .foregroundStyle(isSelected ? Color.primary : InterfacePalette.textSecondary)
-                        .padding(.horizontal, 11)
-                        .frame(height: 24)
+                        .padding(.horizontal, 12)
+                        .frame(height: 26)
                         .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            RoundedRectangle(cornerRadius: 6.5, style: .continuous)
                                 .fill(
                                     isSelected
-                                        ? (colorScheme == .dark ? Color.white.opacity(0.14) : Color.white)
+                                        ? (colorScheme == .dark ? Color.white.opacity(0.13) : Color.white)
                                         : Color.clear
                                 )
                                 .shadow(
-                                    color: isSelected ? Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08) : .clear,
-                                    radius: 2,
+                                    color: isSelected ? Color.black.opacity(colorScheme == .dark ? 0.28 : 0.08) : .clear,
+                                    radius: 2.5,
                                     y: 1
                                 )
                         )
@@ -2044,10 +1978,14 @@ private struct SectionSegmentedControl<Tab: CaseIterable & Identifiable & RawRep
                 .buttonStyle(.plain)
             }
         }
-        .padding(2)
+        .padding(3)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(colorScheme == .dark ? 0.07 : 0.055))
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(InterfacePalette.subtleSurface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(InterfacePalette.cardStroke, lineWidth: 0.65)
         )
         .fixedSize(horizontal: true, vertical: false)
     }
@@ -2062,6 +2000,7 @@ private struct DashboardView: View {
     @ObservedObject var preferences: AppPreferences
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var selectedSection: DashboardSection
     @State private var networkSubTab: NetworkSubTab = .traffic
     @State private var powerPortSubTab: PowerPortSubTab = .battery
@@ -2070,14 +2009,16 @@ private struct DashboardView: View {
         ZStack {
             ZStack {
                 InterfacePalette.canvas(for: colorScheme)
-                RadialGradient(
-                    colors: [InterfacePalette.accent.opacity(colorScheme == .dark ? 0.22 : 0.12), .clear],
-                    center: .topTrailing, startRadius: 0, endRadius: 620
-                )
-                RadialGradient(
-                    colors: [InterfacePalette.memorySeries.opacity(colorScheme == .dark ? 0.16 : 0.08), .clear],
-                    center: .bottomLeading, startRadius: 0, endRadius: 560
-                )
+                if !reduceTransparency {
+                    RadialGradient(
+                        colors: [InterfacePalette.accent.opacity(colorScheme == .dark ? 0.14 : 0.08), .clear],
+                        center: .topTrailing, startRadius: 0, endRadius: 640
+                    )
+                    RadialGradient(
+                        colors: [InterfacePalette.memorySeries.opacity(colorScheme == .dark ? 0.11 : 0.05), .clear],
+                        center: .bottomLeading, startRadius: 0, endRadius: 580
+                    )
+                }
             }
             .ignoresSafeArea()
 
@@ -2096,14 +2037,14 @@ private struct DashboardView: View {
                     }
                     .padding(.top, 26)
                     .padding(.horizontal, 24)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 26)
                 }
                 .scrollClipDisabled(false)
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
                 .id(scrollIdentity)
             }
         }
-        .frame(minWidth: 1040, idealWidth: 1160, minHeight: 700, idealHeight: 820)
+        .frame(minWidth: 1060, idealWidth: 1180, minHeight: 720, idealHeight: 830)
         .background(WindowTransparencyConfigurator())
         .onAppear {
             updateResourceConsumers()
@@ -2152,13 +2093,13 @@ private struct DashboardView: View {
     private var sectionContent: some View {
         switch selectedSection {
         case .monitor:
-            VStack(spacing: 14) {
+            VStack(spacing: InterfaceMetrics.sectionSpacing) {
                 TelemetryPulseStrip(
                     snapshot: model.snapshot,
                     isLoadingExpandedMetrics: model.isRefreshingExpandedMetrics
                 )
 
-                HStack(alignment: .top, spacing: 14) {
+                HStack(alignment: .top, spacing: InterfaceMetrics.sectionSpacing) {
                     CombinedLoadHistory(
                         cpuValues: model.cpuHistory,
                         memoryValues: model.memoryHistory,
@@ -2173,7 +2114,7 @@ private struct DashboardView: View {
 
                 SiliconComputeSection(snapshot: model.snapshot.siliconCompute)
 
-                HStack(alignment: .top, spacing: 14) {
+                HStack(alignment: .top, spacing: InterfaceMetrics.sectionSpacing) {
                     ProcessTable(rows: model.snapshot.processes)
                     SystemDetails(
                         snapshot: model.snapshot,
@@ -2232,13 +2173,32 @@ private struct DashboardView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 28, height: 28)
-                Text("Mac 资源监控")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(InterfacePalette.cardStroke, lineWidth: 0.6)
+                    )
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Mac 资源监控")
+                        .font(.system(size: 13.5, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    Text("TELEMETRY")
+                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                        .tracking(0.8)
+                        .foregroundStyle(InterfacePalette.textTertiary)
+                }
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
             .padding(.top, 34)
             .padding(.bottom, 18)
+
+            Text("监控模块")
+                .font(InterfaceTypography.eyebrow)
+                .tracking(0.8)
+                .foregroundStyle(InterfacePalette.textTertiary)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 6)
 
             VStack(spacing: 3) {
                 ForEach(DashboardSection.primaryCases) { section in
@@ -2248,24 +2208,16 @@ private struct DashboardView: View {
 
             Spacer()
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("系统")
+                    .font(InterfaceTypography.eyebrow)
+                    .tracking(0.8)
+                    .foregroundStyle(InterfacePalette.textTertiary)
+                    .padding(.horizontal, 10)
+
                 sidebarItem(.settings)
 
-                Divider().opacity(0.45)
-
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(InterfacePalette.accent)
-                        .frame(width: 5, height: 5)
-                    Text("CPU \(String(format: "%.0f%%", model.snapshot.cpuPercent))")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(InterfacePalette.textSecondary)
-                    Spacer()
-                    Text(formatTemperature(model.snapshot.cpuTemperature))
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(InterfacePalette.textTertiary)
-                }
-                .padding(.horizontal, 6)
+                sidebarLiveVitalsCard
             }
         }
         .padding(.horizontal, 12)
@@ -2275,19 +2227,80 @@ private struct DashboardView: View {
         .background(InterfacePalette.sidebarSurface(for: colorScheme))
     }
 
+    private var sidebarLiveVitalsCard: some View {
+        let cpuTint = InterfacePalette.loadTint(for: model.snapshot.cpuPercent, base: InterfacePalette.cpuSeries)
+        let tempTint = InterfacePalette.temperatureTint(for: model.snapshot.cpuTemperature)
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(InterfacePalette.signal)
+                    .frame(width: 6, height: 6)
+                Text("实时状态")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(InterfacePalette.textSecondary)
+                Spacer()
+                Text(formatTemperature(model.snapshot.cpuTemperature))
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(tempTint)
+            }
+
+            VStack(spacing: 5) {
+                HStack {
+                    Text("CPU")
+                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(InterfacePalette.textTertiary)
+                    Spacer()
+                    Text(String(format: "%.0f%%", model.snapshot.cpuPercent))
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.primary)
+                }
+                TelemetryProgressBar(progress: model.snapshot.cpuPercent, tint: cpuTint, height: 3.5)
+            }
+
+            HStack(spacing: 6) {
+                Text("MEM \(String(format: "%.0f%%", model.snapshot.memoryPercent))")
+                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(InterfacePalette.textSecondary)
+                Spacer()
+                Text("↓\(formatMenuBarRate(model.snapshot.downloadBytesPerSecond))")
+                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(InterfacePalette.download)
+            }
+        }
+        .padding(10)
+        .background(
+            InterfacePalette.subtleSurface,
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(InterfacePalette.cardStroke, lineWidth: 0.7)
+        )
+    }
+
     private func sidebarItem(_ section: DashboardSection) -> some View {
         SidebarNavigationItem(section: section, isSelected: selectedSection == section) {
-            withAnimation(.easeInOut(duration: 0.16)) {
+            if reduceMotion {
                 selectedSection = section
+            } else {
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    selectedSection = section
+                }
             }
         }
     }
 
     private var contentHeader: some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(selectedSection.eyebrow)
+                    .font(InterfaceTypography.eyebrow)
+                    .tracking(1.1)
+                    .foregroundStyle(InterfacePalette.accent)
+
                 Text(selectedSection.rawValue)
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(.primary)
 
                 HStack(spacing: 6) {
@@ -2297,6 +2310,7 @@ private struct DashboardView: View {
                         Text("·")
                             .foregroundStyle(InterfacePalette.textTertiary)
                         Text(heroFootnote)
+                            .font(.system(size: 11.5, design: .monospaced))
                             .foregroundStyle(InterfacePalette.textTertiary)
                     }
                 }
@@ -2313,27 +2327,13 @@ private struct DashboardView: View {
             }
 
             if selectedSection != .settings {
-                Button(action: performHeroAction) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 11, weight: .medium))
-                        Text(heroActionTitle)
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 11)
-                    .frame(height: 28)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.055))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .stroke(InterfacePalette.cardStroke, lineWidth: 0.6)
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(isHeroActionDisabled)
+                ActionPillButton(
+                    title: heroActionTitle,
+                    symbol: "arrow.clockwise",
+                    isPrimary: false,
+                    isDisabled: isHeroActionDisabled,
+                    action: performHeroAction
+                )
             }
         }
         .padding(.bottom, 4)
@@ -2489,6 +2489,7 @@ private struct MenuBarPresentationState {
 private struct MenuBarPanel: View {
     @ObservedObject var model: MonitorModel
     let processNetworkModel: ProcessNetworkMonitor
+    @Binding var selectedSection: DashboardSection
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
     @State private var presentation = MenuBarPresentationState()
@@ -2496,9 +2497,11 @@ private struct MenuBarPanel: View {
     var body: some View {
         VStack(spacing: 10) {
             menuHeader
-                .padding(.horizontal, 4)
+                .padding(.horizontal, 2)
 
-            primaryVitalsCard
+            heroVitalsGrid
+
+            networkThroughputCard
 
             processTrafficCard
 
@@ -2509,7 +2512,7 @@ private struct MenuBarPanel: View {
                 .padding(.top, 2)
         }
         .padding(12)
-        .frame(width: 344)
+        .frame(width: 360)
         .background(InterfacePalette.menuSurface(for: colorScheme))
         .background(WindowTransparencyConfigurator())
         .onAppear {
@@ -2533,114 +2536,177 @@ private struct MenuBarPanel: View {
     private var snapshot: ResourceSnapshot { model.snapshot }
     private var menuTraffic: ProcessTrafficDisplayState { presentation.traffic }
 
+    private func openDashboard(section: DashboardSection? = nil) {
+        if let section {
+            selectedSection = section
+        }
+        NSApp.setActivationPolicy(.regular)
+        openWindow(id: "dashboard")
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     private var menuHeader: some View {
         HStack(spacing: 8) {
             Image(nsImage: NSApplication.shared.applicationIconImage)
                 .resizable()
                 .scaledToFit()
                 .frame(width: 22, height: 22)
+                .clipShape(RoundedRectangle(cornerRadius: 5.5, style: .continuous))
 
-            Text("Mac 资源监控")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.primary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Mac 资源监控")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                Text(
+                    model.isRefreshingExpandedMetrics
+                        ? "传感器更新中…"
+                        : "更新于 \(snapshot.updatedAt.formatted(date: .omitted, time: .shortened))"
+                )
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(InterfacePalette.textTertiary)
+            }
 
             Spacer()
 
-            HStack(spacing: 5) {
-                Text(snapshot.networkInterface)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+            StatusBadge(
+                text: snapshot.networkInterface,
+                tint: InterfacePalette.signal,
+                showDot: true
+            )
+
+            Button {
+                model.refresh()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(InterfacePalette.textSecondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.06), in: Capsule())
-
-                Text(
-                    model.isRefreshingExpandedMetrics
-                        ? "更新中"
-                        : snapshot.updatedAt.formatted(date: .omitted, time: .shortened)
-                )
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(InterfacePalette.textTertiary)
+                    .frame(width: 24, height: 24)
+                    .background(
+                        InterfacePalette.subtleSurface,
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(InterfacePalette.cardStroke, lineWidth: 0.6)
+                    )
             }
+            .buttonStyle(.plain)
+            .help("立即刷新遥测数据")
+            .accessibilityLabel("刷新")
         }
     }
 
-    private var primaryVitalsCard: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 12) {
-                menuLoadMetric("CPU", value: snapshot.cpuPercent, detail: formatTemperature(snapshot.cpuTemperature))
-                Rectangle()
-                    .fill(InterfacePalette.separator)
-                    .frame(width: 1, height: 34)
-                menuLoadMetric("内存", value: snapshot.memoryPercent, detail: formatBytes(snapshot.memoryUsed))
-            }
+    private var heroVitalsGrid: some View {
+        let cpuTint = InterfacePalette.loadTint(for: snapshot.cpuPercent, base: InterfacePalette.cpuSeries)
+        let memTint = InterfacePalette.loadTint(for: snapshot.memoryPercent, base: InterfacePalette.memorySeries)
+        let tempTint = InterfacePalette.temperatureTint(for: snapshot.cpuTemperature)
 
-            Divider().opacity(0.4)
+        return HStack(spacing: 10) {
+            menuVitalCard(
+                title: "CPU",
+                value: "\(Int(snapshot.cpuPercent.rounded()))%",
+                detail: formatTemperature(snapshot.cpuTemperature),
+                detailTint: tempTint,
+                symbol: "cpu",
+                tint: cpuTint,
+                progress: snapshot.cpuPercent,
+                history: model.cpuHistory
+            )
 
-            HStack(spacing: 12) {
-                HStack(spacing: 5) {
-                    Text("下行")
-                        .font(.system(size: 11))
-                        .foregroundStyle(InterfacePalette.textTertiary)
-                    Spacer()
-                    Text(formatRate(snapshot.downloadBytesPerSecond))
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.primary)
-                }
-                .frame(maxWidth: .infinity)
-
-                Rectangle()
-                    .fill(InterfacePalette.separator)
-                    .frame(width: 1, height: 14)
-
-                HStack(spacing: 5) {
-                    Text("上行")
-                        .font(.system(size: 11))
-                        .foregroundStyle(InterfacePalette.textTertiary)
-                    Spacer()
-                    Text(formatRate(snapshot.uploadBytesPerSecond))
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(InterfacePalette.textSecondary)
-                }
-                .frame(maxWidth: .infinity)
-            }
+            menuVitalCard(
+                title: "内存",
+                value: "\(Int(snapshot.memoryPercent.rounded()))%",
+                detail: formatBytes(snapshot.memoryUsed),
+                detailTint: InterfacePalette.textSecondary,
+                symbol: "memorychip",
+                tint: memTint,
+                progress: snapshot.memoryPercent,
+                history: model.memoryHistory
+            )
         }
-        .padding(11)
-        .stableMenuCard(cornerRadius: 10)
     }
 
-    private func menuLoadMetric(
-        _ title: String,
-        value: Double,
-        detail: String
+    private func menuVitalCard(
+        title: String,
+        value: String,
+        detail: String,
+        detailTint: Color,
+        symbol: String,
+        tint: Color,
+        progress: Double,
+        history: [Double]
     ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                IconBadge(symbol: symbol, tint: tint, size: 20, iconSize: 10, cornerRadius: 5)
                 Text(title)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(InterfacePalette.textSecondary)
                 Spacer()
                 Text(detail)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(InterfacePalette.textTertiary)
-                Text("\(Int(value.rounded()))%")
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(detailTint)
+                    .lineLimit(1)
+            }
+
+            HStack(alignment: .lastTextBaseline, spacing: 6) {
+                Text(value)
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .monospacedDigit()
                     .foregroundStyle(.primary)
+                Spacer(minLength: 4)
+                TelemetrySparkline(values: history, tint: tint)
+                    .frame(width: 66, height: 22)
             }
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.primary.opacity(0.07))
-                    Capsule()
-                        .fill(InterfacePalette.accent.opacity(0.80))
-                        .frame(
-                            width: geometry.size.width
-                                * min(1, max(0, value / 100))
-                        )
-                }
-            }
-            .frame(height: 3)
+
+            TelemetryProgressBar(progress: progress, tint: tint, height: 3.5)
         }
-        .frame(maxWidth: .infinity)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .stableMenuCard(cornerRadius: 10)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var networkThroughputCard: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 8) {
+                IconBadge(symbol: "arrow.down", tint: InterfacePalette.download, size: 22, iconSize: 10.5, cornerRadius: 6)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("实时下行")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(InterfacePalette.textTertiary)
+                    Text(formatRate(snapshot.downloadBytesPerSecond))
+                        .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 10)
+
+            Rectangle()
+                .fill(InterfacePalette.separator)
+                .frame(width: 1, height: 26)
+
+            HStack(spacing: 8) {
+                IconBadge(symbol: "arrow.up", tint: InterfacePalette.upload, size: 22, iconSize: 10.5, cornerRadius: 6)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("实时上行")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(InterfacePalette.textTertiary)
+                    Text(formatRate(snapshot.uploadBytesPerSecond))
+                        .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 10)
+        }
+        .padding(.vertical, 9)
+        .stableMenuCard(cornerRadius: 10)
     }
 
     private var topTrafficRows: [ProcessTrafficRow] {
@@ -2653,25 +2719,28 @@ private struct MenuBarPanel: View {
     }
 
     private var processTrafficCard: some View {
-        VStack(spacing: 8) {
+        let peakRate = max(1, topTrafficRows.first?.currentBytesPerSecond ?? 1)
+
+        return VStack(spacing: 8) {
             HStack(spacing: 6) {
                 Text("活跃进程流量")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.primary)
                 Spacer()
-                Text(
-                    "↓ \(formatMenuBarRate(menuTraffic.downloadBytesPerSecond))  "
-                        + "↑ \(formatMenuBarRate(menuTraffic.uploadBytesPerSecond))"
-                )
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(InterfacePalette.textSecondary)
+                HStack(spacing: 8) {
+                    Text("↓ \(formatMenuBarRate(menuTraffic.downloadBytesPerSecond))")
+                        .foregroundStyle(InterfacePalette.download)
+                    Text("↑ \(formatMenuBarRate(menuTraffic.uploadBytesPerSecond))")
+                        .foregroundStyle(InterfacePalette.upload)
+                }
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
             }
 
             if let error = menuTraffic.errorText {
                 HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle")
+                    Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 11))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(InterfacePalette.upload)
                     Text(error)
                         .font(InterfaceTypography.microMetadata)
                         .foregroundStyle(InterfacePalette.textSecondary)
@@ -2695,8 +2764,10 @@ private struct MenuBarPanel: View {
                 }
                 .frame(minHeight: 22)
             } else {
-                ForEach(topTrafficRows) { row in
-                    menuTrafficRow(row)
+                VStack(spacing: 6) {
+                    ForEach(topTrafficRows) { row in
+                        menuTrafficRow(row, peakRate: peakRate)
+                    }
                 }
             }
         }
@@ -2704,25 +2775,39 @@ private struct MenuBarPanel: View {
         .stableMenuCard(cornerRadius: 10)
     }
 
-    private func menuTrafficRow(_ row: ProcessTrafficRow) -> some View {
-        HStack(spacing: 8) {
+    private func menuTrafficRow(_ row: ProcessTrafficRow, peakRate: Double) -> some View {
+        let ratio = min(1, max(0, row.currentBytesPerSecond / peakRate))
+
+        return HStack(spacing: 8) {
             menuTrafficIcon(row: row)
 
-            Text(row.name)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(row.name)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(InterfacePalette.subtleSurface)
+                        Capsule()
+                            .fill(InterfacePalette.accent.opacity(0.75))
+                            .frame(width: max(3, proxy.size.width * ratio))
+                    }
+                }
+                .frame(height: 2.5)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("↓ \(formatMenuBarRate(row.downloadBytesPerSecond))")
-                .foregroundStyle(row.downloadBytesPerSecond >= 1 ? .primary : .tertiary)
-                .frame(width: 62, alignment: .trailing)
+            Text("↓\(formatMenuBarRate(row.downloadBytesPerSecond))")
+                .foregroundStyle(row.downloadBytesPerSecond >= 1 ? InterfacePalette.download : InterfacePalette.textTertiary)
+                .frame(width: 58, alignment: .trailing)
 
-            Text("↑ \(formatMenuBarRate(row.uploadBytesPerSecond))")
-                .foregroundStyle(row.uploadBytesPerSecond >= 1 ? .secondary : .tertiary)
-                .frame(width: 62, alignment: .trailing)
+            Text("↑\(formatMenuBarRate(row.uploadBytesPerSecond))")
+                .foregroundStyle(row.uploadBytesPerSecond >= 1 ? InterfacePalette.upload : InterfacePalette.textTertiary)
+                .frame(width: 58, alignment: .trailing)
         }
-        .font(.system(size: 11, design: .monospaced))
+        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+        .monospacedDigit()
     }
 
     @ViewBuilder
@@ -2734,10 +2819,10 @@ private struct MenuBarPanel: View {
                 .frame(width: 18, height: 18)
         } else {
             RoundedRectangle(
-                cornerRadius: 4,
+                cornerRadius: 4.5,
                 style: .continuous
             )
-            .fill(Color.primary.opacity(0.06))
+            .fill(InterfacePalette.iconSurface)
             .overlay {
                 Text(String(row.name.prefix(1)).uppercased())
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
@@ -2754,7 +2839,9 @@ private struct MenuBarPanel: View {
                 value: model.isRefreshingExpandedMetrics
                     ? "--"
                     : compactFanSpeed(snapshot.fanSpeed),
-                detail: snapshot.fanCount > 0 ? "\(snapshot.fanCount) 个风扇" : "静音"
+                detail: snapshot.fanCount > 0 ? "\(snapshot.fanCount) 个风扇" : "静音运行",
+                symbol: "fan",
+                tint: InterfacePalette.fan
             )
             hardwareDivider
             menuHardwareMetric(
@@ -2764,7 +2851,9 @@ private struct MenuBarPanel: View {
                     : formatBatteryChargePower(snapshot.chargingPower),
                 detail: model.isRefreshingExpandedMetrics
                     ? "读取中"
-                    : snapshot.powerSource
+                    : snapshot.powerSource,
+                symbol: "bolt.fill",
+                tint: InterfacePalette.power
             )
             hardwareDivider
             menuHardwareMetric(
@@ -2772,7 +2861,9 @@ private struct MenuBarPanel: View {
                 value: model.isRefreshingCable
                     ? "--"
                     : "\(snapshot.cableMonitor.activePorts.count) 个已连",
-                detail: portStatusDetail
+                detail: portStatusDetail,
+                symbol: "cable.connector",
+                tint: InterfacePalette.storage
             )
         }
         .padding(.vertical, 9)
@@ -2783,12 +2874,19 @@ private struct MenuBarPanel: View {
     private func menuHardwareMetric(
         title: String,
         value: String,
-        detail: String
+        detail: String,
+        symbol: String,
+        tint: Color
     ) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(InterfacePalette.textTertiary)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: symbol)
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(tint)
+                Text(title)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(InterfacePalette.textTertiary)
+            }
             Text(value)
                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.primary)
@@ -2806,31 +2904,38 @@ private struct MenuBarPanel: View {
     private var hardwareDivider: some View {
         Rectangle()
             .fill(InterfacePalette.separator)
-            .frame(width: 1, height: 34)
+            .frame(width: 1, height: 36)
     }
 
     private var menuFooter: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
+            ActionPillButton(
+                title: "打开主窗口",
+                symbol: "macwindow",
+                isPrimary: true
+            ) {
+                openDashboard()
+            }
+
             Button {
-                NSApp.setActivationPolicy(.regular)
-                openWindow(id: "dashboard")
-                NSApp.activate(ignoringOtherApps: true)
+                openDashboard(section: .settings)
             } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "macwindow")
-                        .font(.system(size: 11, weight: .medium))
-                    Text("打开主窗口")
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 10)
-                .frame(height: 26)
-                .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.primary.opacity(0.07))
-                )
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(InterfacePalette.textSecondary)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        InterfacePalette.subtleSurface,
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .stroke(InterfacePalette.cardStroke, lineWidth: 0.7)
+                    )
             }
             .buttonStyle(.plain)
+            .help("打开偏好设置")
+            .accessibilityLabel("偏好设置")
 
             Spacer()
 
@@ -2839,11 +2944,14 @@ private struct MenuBarPanel: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "power")
-                        .font(.system(size: 11))
+                        .font(.system(size: 11, weight: .medium))
                     Text("退出")
-                        .font(.system(size: 11))
+                        .font(.system(size: 11.5, weight: .medium))
                 }
                 .foregroundStyle(InterfacePalette.textSecondary)
+                .padding(.horizontal, 8)
+                .frame(height: 28)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("退出 Mac 资源监控")
@@ -2972,7 +3080,11 @@ private struct MacResourceMonitorApp: App {
         }
 
         MenuBarExtra {
-            MenuBarPanel(model: model, processNetworkModel: processNetworkModel)
+            MenuBarPanel(
+                model: model,
+                processNetworkModel: processNetworkModel,
+                selectedSection: $selectedSection
+            )
         } label: {
             MenuBarStatusLabel(model: model, preferences: preferences)
         }

@@ -2,31 +2,32 @@ import SwiftUI
 
 struct NetworkDiagnosticsView: View {
     @ObservedObject var model: NetworkDiagnosticsMonitor
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let snap = model.snapshot
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: InterfaceMetrics.sectionSpacing) {
             HStack(spacing: 12) {
-                summaryCard(
+                MetricSummaryCard(
                     title: "Wi-Fi 信号强度",
                     value: snap.wifi.rssiDbm.map { "\($0) dBm" } ?? "--",
                     detail: wifiSignalDetail(snap.wifi),
                     symbol: "wifi",
                     tint: wifiTint(snap.wifi.rssiDbm)
                 )
-                summaryCard(
+                MetricSummaryCard(
                     title: "物理协商速率",
                     value: snap.wifi.transmitRateMbps.map { String(format: "%.0f Mbps", $0) } ?? "--",
                     detail: wifiChannelDetail(snap.wifi),
                     symbol: "speedometer",
                     tint: InterfacePalette.accent
                 )
-                summaryCard(
+                MetricSummaryCard(
                     title: "网关 / 公网延迟",
                     value: latencyHeadline(gateway: snap.gatewayLatencyMs, internet: snap.internetLatencyMs),
                     detail: "路由器 \(formatMs(snap.gatewayLatencyMs)) · 1.1.1.1 \(formatMs(snap.internetLatencyMs))",
                     symbol: "waveform.path.ecg",
-                    tint: InterfacePalette.download
+                    tint: InterfacePalette.signal
                 )
             }
 
@@ -42,42 +43,57 @@ struct NetworkDiagnosticsView: View {
         let allValues = (model.gatewayHistory + model.internetHistory).compactMap { $0 }
         let peak = max(20.0, (allValues.max() ?? 20.0) * 1.15)
 
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("网络延迟走势（每 3 秒探测）")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Spacer()
-                HStack(spacing: 12) {
-                    legendDot("默认网关", color: InterfacePalette.download)
-                    legendDot("公网 1.1.1.1", color: InterfacePalette.accent)
-                    Text(String(format: "刻度 %.0f ms", peak))
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(InterfacePalette.textTertiary)
+        return VStack(alignment: .leading, spacing: 12) {
+            SectionCardHeader(
+                title: "网络延迟走势",
+                subtitle: "每 3 秒探测 · 刻度上限 \(String(format: "%.0f ms", peak))",
+                symbol: "waveform.path.ecg",
+                tint: InterfacePalette.signal
+            ) {
+                HStack(spacing: 8) {
+                    ChartLegendPill(label: "默认网关", color: InterfacePalette.signal)
+                    ChartLegendPill(label: "公网 1.1.1.1", color: InterfacePalette.accent)
                 }
             }
 
             GeometryReader { proxy in
+                let size = proxy.size
                 ZStack {
                     Path { path in
                         for step in 1..<4 {
-                            let y = proxy.size.height * CGFloat(step) / 4.0
+                            let y = size.height * CGFloat(step) / 4.0
                             path.move(to: CGPoint(x: 0, y: y))
-                            path.addLine(to: CGPoint(x: proxy.size.width, y: y))
+                            path.addLine(to: CGPoint(x: size.width, y: y))
                         }
                     }
-                    .stroke(InterfacePalette.chartGrid, lineWidth: 1)
+                    .stroke(
+                        InterfacePalette.chartGrid,
+                        style: StrokeStyle(lineWidth: 1, dash: [3, 4])
+                    )
 
-                    optionalSeriesPath(values: model.gatewayHistory, peak: peak, size: proxy.size)
-                        .stroke(InterfacePalette.download, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                    optionalAreaPath(values: model.internetHistory, peak: peak, size: size)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    InterfacePalette.accent.opacity(colorScheme == .dark ? 0.22 : 0.14),
+                                    InterfacePalette.accent.opacity(0.01)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
 
-                    optionalSeriesPath(values: model.internetHistory, peak: peak, size: proxy.size)
-                        .stroke(InterfacePalette.accent, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                    optionalSeriesPath(values: model.gatewayHistory, peak: peak, size: size)
+                        .stroke(InterfacePalette.signal, style: StrokeStyle(lineWidth: 2.0, lineCap: .round, lineJoin: .round))
+
+                    optionalSeriesPath(values: model.internetHistory, peak: peak, size: size)
+                        .stroke(InterfacePalette.accent, style: StrokeStyle(lineWidth: 2.0, lineCap: .round, lineJoin: .round))
                 }
             }
-            .frame(height: 84)
+            .frame(height: 98)
+            .clipped()
         }
-        .padding(16)
+        .padding(InterfaceMetrics.cardPadding)
         .stableDashboardCard()
     }
 
@@ -104,22 +120,52 @@ struct NetworkDiagnosticsView: View {
         }
     }
 
-    private func networkConfigCard(_ config: NetworkConfigSnapshot, wifi: WiFiStatusSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("接口与路由配置")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Spacer()
-                Text(config.primaryInterface)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(InterfacePalette.textSecondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.06), in: Capsule())
+    private func optionalAreaPath(values: [Double?], peak: Double, size: CGSize) -> Path {
+        Path { path in
+            guard values.count > 1, peak > 0 else { return }
+            let stepX = size.width / CGFloat(values.count - 1)
+            var segmentStartX: CGFloat?
+            var lastX: CGFloat = 0
+
+            for (index, rawValue) in values.enumerated() {
+                if let value = rawValue {
+                    let x = CGFloat(index) * stepX
+                    let normalized = min(1, max(0, value / peak))
+                    let y = size.height * (1 - CGFloat(normalized))
+                    if segmentStartX == nil {
+                        segmentStartX = x
+                        path.move(to: CGPoint(x: x, y: size.height))
+                        path.addLine(to: CGPoint(x: x, y: y))
+                    } else {
+                        path.addLine(to: CGPoint(x: x, y: y))
+                    }
+                    lastX = x
+                } else if segmentStartX != nil {
+                    path.addLine(to: CGPoint(x: lastX, y: size.height))
+                    path.closeSubpath()
+                    segmentStartX = nil
+                }
             }
 
-            VStack(spacing: 8) {
+            if segmentStartX != nil {
+                path.addLine(to: CGPoint(x: lastX, y: size.height))
+                path.closeSubpath()
+            }
+        }
+    }
+
+    private func networkConfigCard(_ config: NetworkConfigSnapshot, wifi: WiFiStatusSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionCardHeader(
+                title: "接口与路由配置",
+                subtitle: "活跃网卡、IP 地址、DNS 与系统代理",
+                symbol: "point.3.connected.trianglepath.dotted",
+                tint: InterfacePalette.accent
+            ) {
+                StatusBadge(text: config.primaryInterface, tint: InterfacePalette.accent, showDot: true)
+            }
+
+            VStack(spacing: 2) {
                 detailRow("Wi-Fi 网络", wifi.available ? "\(wifi.ssidDisplay)（\(wifi.interfaceName)）" : wifi.ssidDisplay)
                 Divider().opacity(0.35)
                 detailRow("本机 IPv4", config.localIPv4 ?? "--")
@@ -137,7 +183,7 @@ struct NetworkDiagnosticsView: View {
                 detailRow("系统代理", config.proxySummary)
             }
         }
-        .padding(16)
+        .padding(InterfaceMetrics.cardPadding)
         .stableDashboardCard()
     }
 
@@ -148,21 +194,15 @@ struct NetworkDiagnosticsView: View {
                 .foregroundStyle(InterfacePalette.textSecondary)
             Spacer(minLength: 12)
             Text(value)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
         }
-    }
-
-    private func legendDot(_ title: String, color: Color) -> some View {
-        HStack(spacing: 5) {
-            Circle().fill(color).frame(width: 6, height: 6)
-            Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(InterfacePalette.textSecondary)
-        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .hoverRowHighlight(cornerRadius: 6)
     }
 
     private func wifiSignalDetail(_ wifi: WiFiStatusSnapshot) -> String {
@@ -184,7 +224,7 @@ struct NetworkDiagnosticsView: View {
 
     private func wifiTint(_ rssi: Int?) -> Color {
         guard let rssi else { return InterfacePalette.textSecondary }
-        if rssi >= -67 { return InterfacePalette.download }
+        if rssi >= -67 { return InterfacePalette.signal }
         if rssi >= -75 { return InterfacePalette.upload }
         return InterfacePalette.temperature
     }
@@ -198,37 +238,5 @@ struct NetworkDiagnosticsView: View {
     private func formatMs(_ value: Double?) -> String {
         guard let value else { return "--" }
         return value < 10 ? String(format: "%.1f ms", value) : String(format: "%.0f ms", value)
-    }
-
-    private func summaryCard(
-        title: String,
-        value: String,
-        detail: String,
-        symbol: String,
-        tint: Color
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(InterfacePalette.textSecondary)
-                Spacer()
-                Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(tint)
-            }
-            Text(value)
-                .font(.system(size: 22, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-            Text(detail)
-                .font(InterfaceTypography.microMetadata)
-                .foregroundStyle(InterfacePalette.textTertiary)
-                .lineLimit(1)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .stableDashboardCard()
     }
 }
