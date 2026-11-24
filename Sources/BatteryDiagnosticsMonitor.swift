@@ -28,6 +28,7 @@ struct BatteryDiagnosticsSnapshot: Equatable {
     var maxCapacityMAh: Int? = nil
     var currentCapacityMAh: Int? = nil
     var healthPercent: Double? = nil
+    var rawHealthPercent: Double? = nil
     var batteryCondition: String? = nil
     var temperatureCelsius: Double? = nil
     var voltageVolts: Double? = nil
@@ -180,12 +181,14 @@ final class BatteryDiagnosticsCollector: @unchecked Sendable {
 
     func collect(forceRefresh: Bool = false) -> BatteryDiagnosticsSnapshot {
         var snapshot = readSmartBattery()
-        if snapshot.hasBattery && (cachedProfilerInfo == nil || forceRefresh || snapshot.healthPercent == nil) {
+        snapshot.rawHealthPercent = snapshot.healthPercent
+        if snapshot.hasBattery && (cachedProfilerInfo == nil || forceRefresh) {
             cachedProfilerInfo = readSystemProfilerPower()
         }
         if let profiler = cachedProfilerInfo {
-            if snapshot.healthPercent == nil {
-                snapshot.healthPercent = profiler.healthPercent
+            // Prefer official macOS Maximum Capacity % to match System Settings & System Information.
+            if let officialHealth = profiler.healthPercent {
+                snapshot.healthPercent = officialHealth
             }
             if snapshot.batteryCondition == nil {
                 snapshot.batteryCondition = profiler.condition
