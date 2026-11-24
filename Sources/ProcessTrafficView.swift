@@ -82,16 +82,19 @@ struct ProcessTrafficView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
+                let trafficScopeDetail = model.filterProxyTunnels
+                    ? "已剥离代理隧道二次汇总"
+                    : "净应用流量（不含代理转发）"
                 summaryCard(
                     title: "实时应用下载",
                     value: processTrafficRate(model.downloadBytesPerSecond),
-                    detail: "已剥离代理隧道二次汇总",
+                    detail: trafficScopeDetail,
                     symbol: "arrow.down"
                 )
                 summaryCard(
                     title: "实时应用上传",
                     value: processTrafficRate(model.uploadBytesPerSecond),
-                    detail: "已剥离代理隧道二次汇总",
+                    detail: trafficScopeDetail,
                     symbol: "arrow.up"
                 )
                 summaryCard(
@@ -349,13 +352,8 @@ struct ProcessTrafficView: View {
 
     @ViewBuilder
     private func processIcon(row: ProcessTrafficRow) -> some View {
-        if let icon = NSRunningApplication(processIdentifier: pid_t(row.pid))?.icon {
+        if let icon = ProcessIconCache.icon(for: row) {
             Image(nsImage: icon)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 24, height: 24)
-        } else if let bundlePath = row.bundlePath {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: bundlePath))
                 .resizable()
                 .scaledToFit()
                 .frame(width: 24, height: 24)
@@ -417,15 +415,22 @@ struct ProcessTrafficView: View {
     }
 }
 
-private func processTrafficRate(_ bytesPerSecond: Double) -> String {
-    "\(processTrafficBytes(UInt64(max(0, bytesPerSecond))))/s"
-}
-
-private func processTrafficBytes(_ bytes: UInt64) -> String {
+@MainActor
+private let processTrafficByteFormatter: ByteCountFormatter = {
     let formatter = ByteCountFormatter()
     formatter.countStyle = .file
     formatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB, .useTB]
     formatter.includesUnit = true
     formatter.isAdaptive = true
-    return formatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
+    return formatter
+}()
+
+@MainActor
+private func processTrafficRate(_ bytesPerSecond: Double) -> String {
+    "\(processTrafficBytes(UInt64(max(0, bytesPerSecond))))/s"
+}
+
+@MainActor
+private func processTrafficBytes(_ bytes: UInt64) -> String {
+    processTrafficByteFormatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
 }

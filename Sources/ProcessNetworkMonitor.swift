@@ -78,10 +78,9 @@ enum ProcessTrafficConsumer: Hashable {
     case menuBar
 }
 
-private enum ProcessTrafficCollector {
-    private static let proxyKeywords: [String] = [
+enum ProcessTrafficClassifier {
+    private static let substringProxyKeywords: [String] = [
         "quantumult",
-        "surge",
         "clash",
         "mihomo",
         "sing-box",
@@ -90,13 +89,73 @@ private enum ProcessTrafficCollector {
         "privoxy",
         "tun2socks",
         "shadowsocks",
-        "loon",
-        "stash",
         "wireguard",
         "tailscaled",
         "nesessionmanager"
     ]
 
+    private static let exactTokenProxyKeywords: Set<String> = [
+        "surge",
+        "loon",
+        "stash"
+    ]
+
+    static func isProxyTunnel(
+        leafName: String,
+        topAppName: String?,
+        isAppExtension: Bool
+    ) -> Bool {
+        let candidates = [leafName, topAppName ?? ""].map { $0.lowercased() }
+        if isAppExtension {
+            for candidate in candidates where
+                candidate.contains("tunnel") || candidate.contains("packet") || candidate.contains("vpn") {
+                return true
+            }
+        }
+        for candidate in candidates {
+            if substringProxyKeywords.contains(where: { candidate.contains($0) }) {
+                return true
+            }
+            let tokens = candidate.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+            if tokens.contains(where: { exactTokenProxyKeywords.contains($0) }) {
+                return true
+            }
+        }
+        return false
+    }
+}
+
+@MainActor
+enum ProcessIconCache {
+    private static let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 256
+        return cache
+    }()
+
+    static func icon(for row: ProcessTrafficRow) -> NSImage? {
+        if let bundlePath = row.bundlePath {
+            let key = "bundle:\(bundlePath)" as NSString
+            if let cached = cache.object(forKey: key) {
+                return cached
+            }
+            let icon = NSWorkspace.shared.icon(forFile: bundlePath)
+            cache.setObject(icon, forKey: key)
+            return icon
+        }
+        let pidKey = "pid:\(row.pid):\(row.name)" as NSString
+        if let cached = cache.object(forKey: pidKey) {
+            return cached
+        }
+        if let icon = NSRunningApplication(processIdentifier: pid_t(row.pid))?.icon {
+            cache.setObject(icon, forKey: pidKey)
+            return icon
+        }
+        return nil
+    }
+}
+
+private enum ProcessTrafficCollector {
     static func collect() -> ProcessTrafficCollectionResult {
         guard let result = CommandRunner.run(
             "/usr/bin/nettop",
@@ -195,9 +254,11 @@ private enum ProcessTrafficCollector {
             }
         }
 
-        let combinedLower = "\(leafName) \(topAppName ?? "") \(fullPath ?? "")".lowercased()
-        let isTunnel = isAppExtension && (combinedLower.contains("tunnel") || combinedLower.contains("packet") || combinedLower.contains("vpn"))
-            || proxyKeywords.contains { combinedLower.contains($0) }
+        let isTunnel = ProcessTrafficClassifier.isProxyTunnel(
+            leafName: leafName,
+            topAppName: topAppName,
+            isAppExtension: isAppExtension
+        )
 
         if let topAppName, !topAppName.isEmpty {
             if isTunnel {
@@ -266,11 +327,14 @@ private enum ProcessTrafficCollector {
     }
 }
 
+@MainActor
 final class ProcessNetworkMonitor: ObservableObject {
     private static let dashboardRefreshInterval: TimeInterval = 1.6
     private static let menuBarRefreshInterval: TimeInterval = 1.8
     private static let coldStartFastInterval: TimeInterval = 0.32
     private static let reusableBaselineMaxAge: TimeInterval = 15.0
+    private static let baseFailureBackoffInterval: TimeInterval = 5.0
+    private static let maxFailureBackoffInterval: TimeInterval = 15.0
 
     @Published private(set) var displayState = ProcessTrafficDisplayState()
     @Published var filterProxyTunnels: Bool = true {
@@ -321,6 +385,8 @@ final class ProcessNetworkMonitor: ObservableObject {
     private var activeConsumers: Set<ProcessTrafficConsumer> = []
     private var collectionScheduled = false
     private var collectionGeneration: UInt64 = 0
+    private var consecutiveFailureCount = 0
+    private var delayedCollectionTask: Task<Void, Never>?
 
     func setActive(_ active: Bool, for consumer: ProcessTrafficConsumer) {
         let wasCollecting = !activeConsumers.isEmpty
@@ -336,7 +402,10 @@ final class ProcessNetworkMonitor: ObservableObject {
         guard shouldCollect != wasCollecting || isDashboardActive != wasDashboardActive else { return }
 
         collectionGeneration &+= 1
+        delayedCollectionTask?.cancel()
+        delayedCollectionTask = nil
         if shouldCollect {
+            consecutiveFailureCount = 0
             if !wasCollecting {
                 var next = displayState
                 next.errorText = nil
@@ -352,6 +421,9 @@ final class ProcessNetworkMonitor: ObservableObject {
 
     func resetSessionTotals() {
         collectionGeneration &+= 1
+        delayedCollectionTask?.cancel()
+        delayedCollectionTask = nil
+        consecutiveFailureCount = 0
         sessionEntries.removeAll()
         retiredSessionDownloadedBytes = 0
         retiredSessionUploadedBytes = 0
@@ -379,7 +451,7 @@ final class ProcessNetworkMonitor: ObservableObject {
 
         queue.async { [weak self] in
             let result = ProcessTrafficCollector.collect()
-            DispatchQueue.main.async { [weak self] in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.collectionScheduled = false
 
@@ -398,17 +470,29 @@ final class ProcessNetworkMonitor: ObservableObject {
                 }
 
                 self.apply(result)
-                // If we just captured a fresh baseline (or resumed after >15s), follow up in 0.32s for instant rates!
                 let refreshInterval: TimeInterval
-                if !hadRecentBaseline {
-                    refreshInterval = Self.coldStartFastInterval
-                } else if self.activeConsumers.contains(.dashboard) {
-                    refreshInterval = Self.dashboardRefreshInterval
+                if case .failure = result {
+                    self.consecutiveFailureCount = min(self.consecutiveFailureCount + 1, 3)
+                    refreshInterval = min(
+                        Self.maxFailureBackoffInterval,
+                        Self.baseFailureBackoffInterval * Double(self.consecutiveFailureCount)
+                    )
                 } else {
-                    refreshInterval = Self.menuBarRefreshInterval
+                    self.consecutiveFailureCount = 0
+                    // If we just captured a fresh baseline (or resumed after >15s), follow up in 0.32s for instant rates!
+                    if !hadRecentBaseline {
+                        refreshInterval = Self.coldStartFastInterval
+                    } else if self.activeConsumers.contains(.dashboard) {
+                        refreshInterval = Self.dashboardRefreshInterval
+                    } else {
+                        refreshInterval = Self.menuBarRefreshInterval
+                    }
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + refreshInterval) { [weak self] in
-                    guard let self,
+                self.delayedCollectionTask?.cancel()
+                self.delayedCollectionTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: UInt64(max(0.05, refreshInterval) * 1_000_000_000))
+                    guard !Task.isCancelled,
+                          let self,
                           generation == self.collectionGeneration,
                           !self.activeConsumers.isEmpty else { return }
                     self.scheduleCollection()
