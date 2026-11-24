@@ -13,16 +13,16 @@
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111111?logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-0A84FF">
-  <img alt="Version" src="https://img.shields.io/badge/version-2.8.5-0A84FF">
+  <img alt="Version" src="https://img.shields.io/badge/version-2.9.0-0A84FF">
   <img alt="CI" src="https://github.com/dunnlau/MacResourceMonitor/actions/workflows/ci.yml/badge.svg">
 </p>
 
-> 当前版本：**2.8.5（Build 52）**
+> 当前版本：**2.9.0（Build 53）**
 
 基于 SwiftUI 的原生仪表盘与菜单栏监控，集中查看系统资源、进程流量，以及 USB-C / 雷雳端口状态。支持明暗主题，以不同指标色和清晰文字层级呈现数据。
 ## 下载与安装
 
-**[下载 MacResourceMonitor-2.8.5.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v2.8.5/MacResourceMonitor-2.8.5.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
+**[下载 MacResourceMonitor-2.9.0.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v2.9.0/MacResourceMonitor-2.9.0.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
 
 需要 **macOS 26 或更高版本，以及 Apple Silicon 芯片**。不支持 Intel Mac 和旧版 macOS。
 
@@ -35,16 +35,16 @@
 如需校验下载完整性，将同名 `.zip.sha256` 文件下载到相同目录，运行：
 
 ```zsh
-shasum -a 256 -c MacResourceMonitor-2.8.5.zip.sha256
+shasum -a 256 -c MacResourceMonitor-2.9.0.zip.sha256
 ```
 
 ## 功能概览
 
 | 模块 | 功能 |
 | --- | --- |
-| 系统监控 | CPU 负载、物理内存、2 分钟双轴走势图、核心温度、散热风扇、电池与充电功率、高负载进程与系统环境概览 |
+| 系统监控 | **性能概览**：CPU/内存负载、2 分钟双轴走势、Apple Silicon **P/E 核分核负载**与 **GPU 利用率/显存**、温控风扇与高负载进程。<br>**磁盘存储**：实时磁盘读写速率与 2 分钟走势、主磁盘 NVMe SMART 健康度、挂载卷宗容量、可清除空间与外接卷一键安全推出 |
 | 进程流量 | 穿透 `127.0.0.1` 本地系统代理与 `utun` 虚拟网卡显示可归属的应用流量；自动将 `Helper` 子进程归属回宿主 `.app` 并渲染真实图标；默认剥离代理隧道守护进程的二次汇总流量 |
-| 接口监测 | 只读检测 USB-C、MagSafe、USB4、Thunderbolt、DisplayPort、USB-PD 协商功率上限与线缆 E-Marker 标识 |
+| 硬件与供电 | **接口线缆**：只读检测 USB-C、MagSafe、USB4、Thunderbolt、DisplayPort、USB-PD 协商功率上限与线缆 E-Marker 标识。<br>**电池能耗**：电池健康度、循环次数、电芯温度/电压/电流、实时功耗拆解与**阻止休眠进程检测** |
 
 菜单栏弹窗集中展示核心负载指标、**当前活跃进程流量 Top 3** 与硬件供电状态。
 
@@ -60,9 +60,11 @@ shasum -a 256 -c MacResourceMonitor-2.8.5.zip.sha256
 
 进程归属取决于 macOS 暴露的计数器；短连接及暂停采样期间的流量可能遗漏，过滤后的代理数据不能作为完整流量账单。温度、风扇和线缆字段取决于硬件支持。
 
-## 2.8.5 更新
+## 2.9.0 更新
 
-- 移除 AI 订阅配额监控模块及内置 `CodexBarCLI` 依赖，聚焦纯本地 macOS 硬件遥测、进程流量与接口供电监测。
+- **Apple Silicon 细粒度算力监控**：在「系统监控 → 性能概览」中新增 P-Core（性能核）/ E-Core（能效核）实时分核负载柱状图与 GPU 利用率/活跃显存遥测。
+- **磁盘存储与实时 I/O**：在「系统监控」页内新增「磁盘存储」分段，提供实时读写速率、2 分钟双线走势图、主磁盘 NVMe SMART 健康度、挂载卷宗容量与可清除空间统计及外接卷安全推出。
+- **电池健康与阻止休眠检测**：将侧边栏升级为「硬件与供电」，页内新增「电池能耗」分段，提供电池健康度、循环次数、电芯温压电流、实时功耗拆解及阻止休眠进程排查（`pmset -g assertions`）。
 
 历史版本说明保留在 [GitHub Releases](https://github.com/dunnlau/MacResourceMonitor/releases)。
 
@@ -92,7 +94,7 @@ open "Mac资源监控.app"
 
 ## 版本信息
 
-- App 版本：2.8.5
-- Build：52
+- App 版本：2.9.0
+- Build：53
 - Bundle ID：`io.github.svsvnm.MacResourceMonitor`
 - 构建目标：macOS 26.0+，arm64

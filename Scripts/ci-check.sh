@@ -59,10 +59,17 @@ xcrun swiftc \
   -framework AppKit \
   -framework IOKit \
   -framework SystemConfiguration \
+  -framework Metal \
   Sources/CommandRunner.swift \
   Sources/ProcessNetworkMonitor.swift \
   Sources/ProcessTrafficView.swift \
   Sources/CableMonitor.swift \
+  Sources/SiliconComputeMonitor.swift \
+  Sources/SiliconComputeView.swift \
+  Sources/StorageMonitor.swift \
+  Sources/StorageView.swift \
+  Sources/BatteryDiagnosticsMonitor.swift \
+  Sources/BatteryDiagnosticsView.swift \
   Sources/MacResourceMonitor.swift
 
 echo "[3/6] Build a fresh application bundle"
@@ -71,7 +78,8 @@ xcrun swiftc -swift-version 5 -warnings-as-errors -parse-as-library \
   "${SDK_FLAGS[@]}" \
   -module-cache-path "$MODULE_CACHE_DIR" \
   -target arm64-apple-macos26.0 \
-  Sources/CommandRunner.swift Sources/ProcessNetworkMonitor.swift Tests/MonitoringTests.swift \
+  -framework IOKit \
+  Sources/CommandRunner.swift Sources/ProcessNetworkMonitor.swift Sources/StorageMonitor.swift Sources/BatteryDiagnosticsMonitor.swift Tests/MonitoringTests.swift \
   -o .build/tests/monitoring-tests
 .build/tests/monitoring-tests
 ./build.sh >/dev/null

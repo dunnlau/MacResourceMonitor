@@ -37,10 +37,17 @@ xcrun swiftc \
   -framework AppKit \
   -framework IOKit \
   -framework SystemConfiguration \
+  -framework Metal \
   "$SCRIPT_DIR/Sources/CommandRunner.swift" \
   "$SCRIPT_DIR/Sources/ProcessNetworkMonitor.swift" \
   "$SCRIPT_DIR/Sources/ProcessTrafficView.swift" \
   "$SCRIPT_DIR/Sources/CableMonitor.swift" \
+  "$SCRIPT_DIR/Sources/SiliconComputeMonitor.swift" \
+  "$SCRIPT_DIR/Sources/SiliconComputeView.swift" \
+  "$SCRIPT_DIR/Sources/StorageMonitor.swift" \
+  "$SCRIPT_DIR/Sources/StorageView.swift" \
+  "$SCRIPT_DIR/Sources/BatteryDiagnosticsMonitor.swift" \
+  "$SCRIPT_DIR/Sources/BatteryDiagnosticsView.swift" \
   "$SCRIPT_DIR/Sources/MacResourceMonitor.swift" \
   -o "$EXECUTABLE_DIR/MacResourceMonitor"
 

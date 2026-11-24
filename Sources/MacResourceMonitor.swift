@@ -42,6 +42,9 @@ private struct ResourceSnapshot {
     var processes: [ProcessRow] = []
     var cableMonitor = CableMonitorSnapshot()
     var chargingPower = ChargingPowerSnapshot()
+    var siliconCompute = SiliconComputeSnapshot()
+    var storage = StorageMonitorSnapshot()
+    var batteryDiagnostics = BatteryDiagnosticsSnapshot()
     var expandedMetricsUpdatedAt: Date?
     var updatedAt = Date()
 }
@@ -299,6 +302,9 @@ private struct ResourceCollectionOptions {
     var includeExpandedMetrics = false
     var includeTopProcesses = false
     var includeCable = false
+    var includeSiliconCompute = false
+    var includeStorage = false
+    var includeBatteryDiagnostics = false
 }
 
 private enum ResourceMonitorConsumer: Hashable {
@@ -306,6 +312,9 @@ private enum ResourceMonitorConsumer: Hashable {
     case menuBar
     case processTable
     case cable
+    case siliconCompute
+    case storage
+    case batteryDiagnostics
 }
 
 /// Accessed exclusively on `MonitorModel`'s serial collector queue.
@@ -320,11 +329,16 @@ private final class SystemCollector: @unchecked Sendable {
     private let smc = SMCReader()
     private let cableCollector = CableCollector()
     private let chargingPowerReader = ChargingPowerReader()
+    private let siliconComputeCollector = SiliconComputeCollector()
+    private let storageCollector = StorageCollector()
+    private let batteryDiagnosticsCollector = BatteryDiagnosticsCollector()
 
     func collect(
         options: ResourceCollectionOptions,
         forceCableRefresh: Bool = false,
-        forceExpandedMetricsRefresh: Bool = false
+        forceExpandedMetricsRefresh: Bool = false,
+        forceStorageRefresh: Bool = false,
+        forceBatteryDiagnosticsRefresh: Bool = false
     ) -> ResourceSnapshot {
         var snapshot = cachedSnapshot
         snapshot.cpuPercent = sampleCPU()
@@ -367,6 +381,20 @@ private final class SystemCollector: @unchecked Sendable {
             snapshot.chargingPower = chargingPowerReader.read()
         } else {
             batterySampleCounter = 0
+        }
+
+        if options.includeSiliconCompute {
+            snapshot.siliconCompute = siliconComputeCollector.collect()
+        }
+
+        if options.includeStorage || forceStorageRefresh {
+            snapshot.storage = storageCollector.collect(forceVolumeRefresh: forceStorageRefresh)
+        }
+
+        if options.includeBatteryDiagnostics || forceBatteryDiagnosticsRefresh {
+            snapshot.batteryDiagnostics = batteryDiagnosticsCollector.collect(
+                forceRefresh: forceBatteryDiagnosticsRefresh
+            )
         }
 
         snapshot.processes = options.includeTopProcesses ? sampleTopProcesses() : []
@@ -584,6 +612,8 @@ private final class MonitorModel: ObservableObject {
     private(set) var snapshot = ResourceSnapshot()
     private(set) var cpuHistory = Array(repeating: 0.0, count: 60)
     private(set) var memoryHistory = Array(repeating: 0.0, count: 60)
+    private(set) var diskReadHistory = Array(repeating: 0.0, count: 60)
+    private(set) var diskWriteHistory = Array(repeating: 0.0, count: 60)
     @Published var isRefreshingCable = false
     @Published var isRefreshingExpandedMetrics = false
 
@@ -593,6 +623,8 @@ private final class MonitorModel: ObservableObject {
     private var refreshInProgress = false
     private var refreshPending = false
     private var forceCableRefreshPending = false
+    private var forceStorageRefreshPending = false
+    private var forceBatteryDiagnosticsRefreshPending = false
     private var expandedMetricsRefreshGeneration: UInt64 = 0
     private var activeConsumers: Set<ResourceMonitorConsumer> = []
 
@@ -626,6 +658,8 @@ private final class MonitorModel: ObservableObject {
 
         let newlyActive = activeConsumers.subtracting(previousConsumers)
         let needsCableRefresh = newlyActive.contains(.cable) || newlyActive.contains(.menuBar)
+        let needsStorageRefresh = newlyActive.contains(.storage)
+        let needsBatteryRefresh = newlyActive.contains(.batteryDiagnostics)
         let expandedBecameActive = newlyActive.contains(.expandedMetrics) || newlyActive.contains(.menuBar)
         let expandedMetricsAreActive = activeConsumers.contains(.expandedMetrics)
             || activeConsumers.contains(.menuBar)
@@ -641,41 +675,69 @@ private final class MonitorModel: ObservableObject {
             expandedMetricsRefreshGeneration &+= 1
             isRefreshingExpandedMetrics = false
         }
-        refresh(forceCableRefresh: needsCableRefresh)
+        refresh(
+            forceCableRefresh: needsCableRefresh,
+            forceStorageRefresh: needsStorageRefresh,
+            forceBatteryDiagnosticsRefresh: needsBatteryRefresh
+        )
     }
 
-    func refresh(forceCableRefresh: Bool = false) {
+    func refresh(
+        forceCableRefresh: Bool = false,
+        forceStorageRefresh: Bool = false,
+        forceBatteryDiagnosticsRefresh: Bool = false
+    ) {
         if forceCableRefresh {
             forceCableRefreshPending = true
             isRefreshingCable = true
+        }
+        if forceStorageRefresh {
+            forceStorageRefreshPending = true
+        }
+        if forceBatteryDiagnosticsRefresh {
+            forceBatteryDiagnosticsRefreshPending = true
         }
         guard !refreshInProgress else {
             refreshPending = true
             return
         }
         let shouldForceCableRefresh = forceCableRefreshPending
+        let shouldForceStorageRefresh = forceStorageRefreshPending
+        let shouldForceBatteryRefresh = forceBatteryDiagnosticsRefreshPending
         let shouldForceExpandedMetricsRefresh = isRefreshingExpandedMetrics
         let options = collectionOptions
         let expandedMetricsGeneration = expandedMetricsRefreshGeneration
         let collector = self.collector
         forceCableRefreshPending = false
+        forceStorageRefreshPending = false
+        forceBatteryDiagnosticsRefreshPending = false
         refreshPending = false
         refreshInProgress = true
         queue.async { [weak self] in
             let next = collector.collect(
                 options: options,
                 forceCableRefresh: shouldForceCableRefresh,
-                forceExpandedMetricsRefresh: shouldForceExpandedMetricsRefresh
+                forceExpandedMetricsRefresh: shouldForceExpandedMetricsRefresh,
+                forceStorageRefresh: shouldForceStorageRefresh,
+                forceBatteryDiagnosticsRefresh: shouldForceBatteryRefresh
             )
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let nextCPUHistory = Array(self.cpuHistory.suffix(59)) + [next.cpuPercent]
                 let nextMemoryHistory = Array(self.memoryHistory.suffix(59)) + [next.memoryPercent]
+                let nextDiskReadHistory = options.includeStorage
+                    ? Array(self.diskReadHistory.suffix(59)) + [next.storage.readBytesPerSecond]
+                    : self.diskReadHistory
+                let nextDiskWriteHistory = options.includeStorage
+                    ? Array(self.diskWriteHistory.suffix(59)) + [next.storage.writeBytesPerSecond]
+                    : self.diskWriteHistory
                 self.objectWillChange.send()
                 withTransaction(Transaction(animation: nil)) {
                     self.snapshot = next
                     self.cpuHistory = nextCPUHistory
                     self.memoryHistory = nextMemoryHistory
+                    self.diskReadHistory = nextDiskReadHistory
+                    self.diskWriteHistory = nextDiskWriteHistory
                     self.refreshInProgress = false
                     if options.includeExpandedMetrics,
                        expandedMetricsGeneration == self.expandedMetricsRefreshGeneration {
@@ -685,7 +747,8 @@ private final class MonitorModel: ObservableObject {
                         self.isRefreshingCable = self.forceCableRefreshPending
                     }
                 }
-                if self.refreshPending || self.forceCableRefreshPending {
+                if self.refreshPending || self.forceCableRefreshPending
+                    || self.forceStorageRefreshPending || self.forceBatteryDiagnosticsRefreshPending {
                     self.refresh()
                 }
             }
@@ -696,13 +759,26 @@ private final class MonitorModel: ObservableObject {
         refresh(forceCableRefresh: true)
     }
 
+    func ejectVolume(_ volume: StorageVolumeSnapshot) {
+        let url = URL(fileURLWithPath: volume.mountPath)
+        Task.detached(priority: .userInitiated) {
+            try? NSWorkspace.shared.unmountAndEjectDevice(at: url)
+            await MainActor.run { [weak self] in
+                self?.refresh(forceStorageRefresh: true)
+            }
+        }
+    }
+
     private var collectionOptions: ResourceCollectionOptions {
         ResourceCollectionOptions(
             includeExpandedMetrics: activeConsumers.contains(.expandedMetrics)
                 || activeConsumers.contains(.menuBar),
             includeTopProcesses: activeConsumers.contains(.processTable),
             includeCable: activeConsumers.contains(.cable)
-                || activeConsumers.contains(.menuBar)
+                || activeConsumers.contains(.menuBar),
+            includeSiliconCompute: activeConsumers.contains(.siliconCompute),
+            includeStorage: activeConsumers.contains(.storage),
+            includeBatteryDiagnostics: activeConsumers.contains(.batteryDiagnostics)
         )
     }
 }
@@ -1547,7 +1623,7 @@ private struct CablePortCard: View {
 private enum DashboardSection: String, CaseIterable, Identifiable {
     case monitor = "系统监控"
     case traffic = "进程流量"
-    case ports = "接口监测"
+    case ports = "硬件与供电"
 
     var id: String { rawValue }
 
@@ -1555,7 +1631,7 @@ private enum DashboardSection: String, CaseIterable, Identifiable {
         switch self {
         case .monitor: return "gauge.with.dots.needle.50percent"
         case .traffic: return "point.3.connected.trianglepath.dotted"
-        case .ports: return "cable.connector"
+        case .ports: return "bolt.horizontal.circle"
         }
     }
 
@@ -1565,9 +1641,9 @@ private enum DashboardSection: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .monitor: return "性能与硬件状态"
+        case .monitor: return "性能、GPU 与磁盘"
         case .traffic: return "实时进程上下行"
-        case .ports: return "USB-C、雷雳与供电"
+        case .ports: return "接口、电池与能耗"
         }
     }
 
@@ -1575,9 +1651,23 @@ private enum DashboardSection: String, CaseIterable, Identifiable {
         switch self {
         case .monitor: return "SYSTEM / LIVE"
         case .traffic: return "NETWORK / PROCESS"
-        case .ports: return "PORTS / POWER"
+        case .ports: return "HARDWARE / POWER"
         }
     }
+}
+
+private enum MonitorSubTab: String, CaseIterable, Identifiable {
+    case overview = "性能概览"
+    case storage = "磁盘存储"
+
+    var id: String { rawValue }
+}
+
+private enum HardwareSubTab: String, CaseIterable, Identifiable {
+    case ports = "接口线缆"
+    case battery = "电池能耗"
+
+    var id: String { rawValue }
 }
 
 enum InterfaceMetrics {
@@ -1892,12 +1982,59 @@ private struct SidebarNavigationItem: View {
     }
 }
 
+private struct SectionSegmentedControl<Tab: CaseIterable & Identifiable & RawRepresentable & Hashable>: View where Tab.RawValue == String {
+    @Binding var selection: Tab
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Array(Tab.allCases)) { option in
+                let isSelected = selection == option
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        selection = option
+                    }
+                } label: {
+                    Text(option.rawValue)
+                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                        .foregroundStyle(isSelected ? Color.primary : InterfacePalette.textSecondary)
+                        .padding(.horizontal, 11)
+                        .frame(height: 24)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(
+                                    isSelected
+                                        ? (colorScheme == .dark ? Color.white.opacity(0.14) : Color.white)
+                                        : Color.clear
+                                )
+                                .shadow(
+                                    color: isSelected ? Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08) : .clear,
+                                    radius: 2,
+                                    y: 1
+                                )
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.07 : 0.055))
+        )
+        .fixedSize(horizontal: true, vertical: false)
+    }
+}
+
 private struct DashboardView: View {
     @ObservedObject var model: MonitorModel
     @ObservedObject var processNetworkModel: ProcessNetworkMonitor
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Binding var selectedSection: DashboardSection
+    @State private var monitorSubTab: MonitorSubTab = .overview
+    @State private var hardwareSubTab: HardwareSubTab = .ports
 
     var body: some View {
         ZStack {
@@ -1933,7 +2070,7 @@ private struct DashboardView: View {
                 }
                 .scrollClipDisabled(false)
                 .scrollEdgeEffectStyle(.soft, for: .bottom)
-                .id(selectedSection.id)
+                .id(scrollIdentity)
             }
         }
         .frame(minWidth: 1040, idealWidth: 1160, minHeight: 700, idealHeight: 820)
@@ -1944,63 +2081,106 @@ private struct DashboardView: View {
         .onChange(of: selectedSection) { _, _ in
             updateResourceConsumers()
         }
+        .onChange(of: monitorSubTab) { _, _ in
+            updateResourceConsumers()
+        }
+        .onChange(of: hardwareSubTab) { _, _ in
+            updateResourceConsumers()
+        }
         .onDisappear {
             model.updateActiveConsumers([
                 .expandedMetrics: false,
                 .processTable: false,
-                .cable: false
+                .cable: false,
+                .siliconCompute: false,
+                .storage: false,
+                .batteryDiagnostics: false
             ])
+        }
+    }
+
+    private var scrollIdentity: String {
+        switch selectedSection {
+        case .monitor: return "monitor-\(monitorSubTab.rawValue)"
+        case .traffic: return "traffic"
+        case .ports: return "hardware-\(hardwareSubTab.rawValue)"
         }
     }
 
     private func updateResourceConsumers() {
         model.updateActiveConsumers([
             .expandedMetrics: selectedSection == .monitor || selectedSection == .ports,
-            .processTable: selectedSection == .monitor,
-            .cable: selectedSection == .ports
+            .processTable: selectedSection == .monitor && monitorSubTab == .overview,
+            .siliconCompute: selectedSection == .monitor && monitorSubTab == .overview,
+            .storage: selectedSection == .monitor && monitorSubTab == .storage,
+            .cable: selectedSection == .ports && hardwareSubTab == .ports,
+            .batteryDiagnostics: selectedSection == .ports && hardwareSubTab == .battery
         ])
     }
 
     @ViewBuilder
     private var sectionContent: some View {
         if selectedSection == .monitor {
-            VStack(spacing: 14) {
-                TelemetryPulseStrip(
-                    snapshot: model.snapshot,
-                    isLoadingExpandedMetrics: model.isRefreshingExpandedMetrics
+            if monitorSubTab == .overview {
+                VStack(spacing: 14) {
+                    TelemetryPulseStrip(
+                        snapshot: model.snapshot,
+                        isLoadingExpandedMetrics: model.isRefreshingExpandedMetrics
+                    )
+
+                    HStack(alignment: .top, spacing: 14) {
+                        CombinedLoadHistory(
+                            cpuValues: model.cpuHistory,
+                            memoryValues: model.memoryHistory,
+                            cpuValue: model.snapshot.cpuPercent,
+                            memoryValue: model.snapshot.memoryPercent
+                        )
+                        HardwareTelemetryPanel(
+                            snapshot: model.snapshot,
+                            isLoadingExpandedMetrics: model.isRefreshingExpandedMetrics
+                        )
+                    }
+
+                    SiliconComputeSection(snapshot: model.snapshot.siliconCompute)
+
+                    HStack(alignment: .top, spacing: 14) {
+                        ProcessTable(rows: model.snapshot.processes)
+                        SystemDetails(
+                            snapshot: model.snapshot,
+                            isLoadingExpandedMetrics: model.isRefreshingExpandedMetrics
+                        )
+                    }
+                }
+            } else {
+                StorageView(
+                    snapshot: model.snapshot.storage,
+                    readHistory: model.diskReadHistory,
+                    writeHistory: model.diskWriteHistory,
+                    onEjectVolume: { volume in
+                        model.ejectVolume(volume)
+                    }
                 )
-
-                HStack(alignment: .top, spacing: 14) {
-                    CombinedLoadHistory(
-                        cpuValues: model.cpuHistory,
-                        memoryValues: model.memoryHistory,
-                        cpuValue: model.snapshot.cpuPercent,
-                        memoryValue: model.snapshot.memoryPercent
-                    )
-                    HardwareTelemetryPanel(
-                        snapshot: model.snapshot,
-                        isLoadingExpandedMetrics: model.isRefreshingExpandedMetrics
-                    )
-                }
-
-                HStack(alignment: .top, spacing: 14) {
-                    ProcessTable(rows: model.snapshot.processes)
-                    SystemDetails(
-                        snapshot: model.snapshot,
-                        isLoadingExpandedMetrics: model.isRefreshingExpandedMetrics
-                    )
-                }
             }
         } else if selectedSection == .traffic {
             ProcessTrafficView(model: processNetworkModel)
         } else {
-            PortMonitorView(
-                monitor: model.snapshot.cableMonitor,
-                chargingPower: model.isRefreshingExpandedMetrics
-                    ? ChargingPowerSnapshot()
-                    : model.snapshot.chargingPower,
-                isRefreshing: model.isRefreshingCable
-            )
+            if hardwareSubTab == .ports {
+                PortMonitorView(
+                    monitor: model.snapshot.cableMonitor,
+                    chargingPower: model.isRefreshingExpandedMetrics
+                        ? ChargingPowerSnapshot()
+                        : model.snapshot.chargingPower,
+                    isRefreshing: model.isRefreshingCable
+                )
+            } else {
+                BatteryDiagnosticsView(
+                    diagnostics: model.snapshot.batteryDiagnostics,
+                    inputWatts: model.snapshot.chargingPower.inputWatts,
+                    batteryChargeWatts: model.snapshot.chargingPower.batteryChargeWatts,
+                    systemLoadWatts: model.snapshot.chargingPower.systemLoadWatts,
+                    powerSource: model.snapshot.powerSource
+                )
+            }
         }
     }
 
@@ -2061,7 +2241,7 @@ private struct DashboardView: View {
     }
 
     private var contentHeader: some View {
-        HStack(alignment: .center, spacing: 14) {
+        HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(selectedSection.rawValue)
                     .font(.system(size: 20, weight: .semibold))
@@ -2080,6 +2260,12 @@ private struct DashboardView: View {
             }
 
             Spacer(minLength: 14)
+
+            if selectedSection == .monitor {
+                SectionSegmentedControl(selection: $monitorSubTab)
+            } else if selectedSection == .ports {
+                SectionSegmentedControl(selection: $hardwareSubTab)
+            }
 
             Button(action: performHeroAction) {
                 HStack(spacing: 5) {
@@ -2109,6 +2295,12 @@ private struct DashboardView: View {
     private var heroFootnote: String {
         switch selectedSection {
         case .monitor:
+            if monitorSubTab == .storage {
+                if let date = model.snapshot.storage.updatedAt {
+                    return "更新于 \(date.formatted(date: .omitted, time: .standard))"
+                }
+                return "正在读取存储"
+            }
             if model.isRefreshingExpandedMetrics { return "正在更新传感器" }
             let date = model.snapshot.expandedMetricsUpdatedAt ?? model.snapshot.updatedAt
             return "更新于 \(date.formatted(date: .omitted, time: .standard))"
@@ -2118,6 +2310,12 @@ private struct DashboardView: View {
             }
             return processNetworkModel.errorText ?? "正在采样"
         case .ports:
+            if hardwareSubTab == .battery {
+                if let date = model.snapshot.batteryDiagnostics.updatedAt {
+                    return "检测于 \(date.formatted(date: .omitted, time: .standard))"
+                }
+                return "只读电池与休眠检测"
+            }
             if model.isRefreshingCable { return "正在检测" }
             if let error = model.snapshot.cableMonitor.errorText {
                 return error
@@ -2133,7 +2331,9 @@ private struct DashboardView: View {
         switch selectedSection {
         case .monitor: return "刷新"
         case .traffic: return "清零累计"
-        case .ports: return model.isRefreshingCable ? "检测中" : "重新检测"
+        case .ports:
+            if hardwareSubTab == .battery { return "刷新诊断" }
+            return model.isRefreshingCable ? "检测中" : "重新检测"
         }
     }
 
@@ -2141,26 +2341,37 @@ private struct DashboardView: View {
         switch selectedSection {
         case .monitor: return false
         case .traffic: return false
-        case .ports: return model.isRefreshingCable
+        case .ports: return hardwareSubTab == .ports && model.isRefreshingCable
         }
     }
 
     private func performHeroAction() {
         switch selectedSection {
         case .monitor:
-            model.refresh()
+            model.refresh(forceStorageRefresh: monitorSubTab == .storage)
         case .traffic:
             processNetworkModel.resetSessionTotals()
         case .ports:
-            model.refreshCableMonitor()
+            if hardwareSubTab == .battery {
+                model.refresh(forceBatteryDiagnosticsRefresh: true)
+            } else {
+                model.refreshCableMonitor()
+            }
         }
     }
 
     private var headerSubtitle: String {
         switch selectedSection {
-        case .monitor: return "处理器、内存、温控与硬件实时状态"
-        case .traffic: return "按应用进程实时统计上下行速率与累计流量"
-        case .ports: return "USB-C、雷雳接口连接与充电功率协商"
+        case .monitor:
+            return monitorSubTab == .storage
+                ? "磁盘实时读写速率、NVMe 健康度与挂载卷宗"
+                : "处理器 P/E 核、GPU、内存与温控实时状态"
+        case .traffic:
+            return "按应用进程实时统计上下行速率与累计流量"
+        case .ports:
+            return hardwareSubTab == .battery
+                ? "电池健康度、实时功耗拆解与阻止休眠进程检测"
+                : "USB-C、雷雳接口连接与充电功率协商"
         }
     }
 }
