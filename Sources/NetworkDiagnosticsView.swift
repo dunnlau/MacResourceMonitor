@@ -124,7 +124,13 @@ struct NetworkDiagnosticsView: View {
                 Divider().opacity(0.35)
                 detailRow("本机 IPv4", config.localIPv4 ?? "--")
                 Divider().opacity(0.35)
+                detailRow("本机 IPv6", config.localIPv6 ?? "未分配")
+                Divider().opacity(0.35)
                 detailRow("默认网关", config.routerIP ?? "--")
+                if let routerIPv6 = config.routerIPv6, !routerIPv6.isEmpty {
+                    Divider().opacity(0.35)
+                    detailRow("IPv6 网关", routerIPv6)
+                }
                 Divider().opacity(0.35)
                 detailRow("DNS 服务器", config.dnsServers.isEmpty ? "--" : config.dnsServers.joined(separator: ", "))
                 Divider().opacity(0.35)
@@ -146,6 +152,7 @@ struct NetworkDiagnosticsView: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .textSelection(.enabled)
         }
     }
 

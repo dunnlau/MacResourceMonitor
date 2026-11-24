@@ -28,6 +28,7 @@ struct BatteryDiagnosticsSnapshot: Equatable {
     var maxCapacityMAh: Int? = nil
     var currentCapacityMAh: Int? = nil
     var healthPercent: Double? = nil
+    var batteryCondition: String? = nil
     var temperatureCelsius: Double? = nil
     var voltageVolts: Double? = nil
     var amperageAmps: Double? = nil
@@ -38,6 +39,11 @@ struct BatteryDiagnosticsSnapshot: Equatable {
     var timeRemainingMinutes: Int? = nil
     var sleepAssertions: [SleepAssertionItem] = []
     var updatedAt: Date?
+
+    var dischargeWatts: Double? {
+        guard !isCharging, let v = voltageVolts, let a = amperageAmps, a < -0.01 else { return nil }
+        return abs(v * a)
+    }
 }
 
 enum BatteryDiagnosticsParser {
@@ -46,6 +52,66 @@ enum BatteryDiagnosticsParser {
               let designCap = designCapacityMAh,
               maxCap > 0, designCap > 0 else { return nil }
         return min(100.0, max(0.0, Double(maxCap) / Double(designCap) * 100.0))
+    }
+
+    /// Normalizes AppleSmartBattery temperature readings across centikelvin (e.g. 30150),
+    /// centidegrees Celsius (e.g. 2985), and whole degrees Celsius (e.g. 30).
+    static func normalizeTemperatureCelsius(_ raw: Int) -> Double? {
+        let celsius: Double
+        if (20_000...37_000).contains(raw) {
+            celsius = Double(raw) / 100.0 - 273.15
+        } else if (500...9_500).contains(raw) {
+            celsius = Double(raw) / 100.0
+        } else if (1...95).contains(raw) {
+            celsius = Double(raw)
+        } else {
+            return nil
+        }
+        return (0.0...90.0).contains(celsius) ? celsius : nil
+    }
+
+    static func parseSystemProfilerPowerJSON(
+        _ data: Data
+    ) -> (healthPercent: Double?, condition: String?, cycleCount: Int?, maxCapacityMAh: Int?) {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let items = root["SPPowerDataType"] as? [[String: Any]] else {
+            return (nil, nil, nil, nil)
+        }
+        var healthPercent: Double? = nil
+        var condition: String? = nil
+        var cycleCount: Int? = nil
+        var maxCapMAh: Int? = nil
+
+        for item in items {
+            if let healthInfo = item["sppower_battery_health_info"] as? [String: Any] {
+                if let maxCapStr = healthInfo["sppower_battery_health_maximum_capacity"] as? String {
+                    let digits = maxCapStr.replacingOccurrences(of: "%", with: "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let parsed = Double(digits), parsed > 0, parsed <= 100 {
+                        healthPercent = parsed
+                    }
+                }
+                if let rawCond = healthInfo["sppower_battery_health"] as? String {
+                    switch rawCond.lowercased() {
+                    case "good", "normal": condition = "正常"
+                    case "fair": condition = "一般"
+                    case "poor", "check battery", "replace soon", "replace now", "service recommended":
+                        condition = "建议维修"
+                    default:
+                        if !rawCond.isEmpty { condition = rawCond }
+                    }
+                }
+                if let cycles = (healthInfo["sppower_battery_cycle_count"] as? NSNumber)?.intValue {
+                    cycleCount = cycles
+                }
+            }
+            if let chargeInfo = item["sppower_battery_charge_info"] as? [String: Any] {
+                if let maxCap = (chargeInfo["sppower_battery_max_capacity"] as? NSNumber)?.intValue, maxCap > 100 {
+                    maxCapMAh = maxCap
+                }
+            }
+        }
+        return (healthPercent, condition, cycleCount, maxCapMAh)
     }
 
     static func parseSleepAssertions(_ output: String) -> [SleepAssertionItem] {
@@ -110,9 +176,27 @@ enum BatteryDiagnosticsParser {
 final class BatteryDiagnosticsCollector: @unchecked Sendable {
     private var assertionsCounter = 0
     private var cachedAssertions: [SleepAssertionItem] = []
+    private var cachedProfilerInfo: (healthPercent: Double?, condition: String?, cycleCount: Int?, maxCapacityMAh: Int?)? = nil
 
     func collect(forceRefresh: Bool = false) -> BatteryDiagnosticsSnapshot {
         var snapshot = readSmartBattery()
+        if snapshot.hasBattery && (cachedProfilerInfo == nil || forceRefresh || snapshot.healthPercent == nil) {
+            cachedProfilerInfo = readSystemProfilerPower()
+        }
+        if let profiler = cachedProfilerInfo {
+            if snapshot.healthPercent == nil {
+                snapshot.healthPercent = profiler.healthPercent
+            }
+            if snapshot.batteryCondition == nil {
+                snapshot.batteryCondition = profiler.condition
+            }
+            if snapshot.cycleCount == nil {
+                snapshot.cycleCount = profiler.cycleCount
+            }
+            if snapshot.maxCapacityMAh == nil {
+                snapshot.maxCapacityMAh = profiler.maxCapacityMAh
+            }
+        }
         if forceRefresh || assertionsCounter == 0 {
             cachedAssertions = sampleSleepAssertions()
             assertionsCounter = 0
@@ -142,12 +226,22 @@ final class BatteryDiagnosticsCollector: @unchecked Sendable {
             )?.takeRetainedValue()
         }
 
+        let batteryData = property("BatteryData") as? [String: Any] ?? [:]
+
         func intProp(_ key: String) -> Int? {
-            (property(key) as? NSNumber)?.intValue
+            if let num = property(key) as? NSNumber {
+                return num.intValue
+            }
+            if let num = batteryData[key] as? NSNumber {
+                return num.intValue
+            }
+            return nil
         }
 
         let designCap = intProp("DesignCapacity")
-        let rawMaxCap = intProp("AppleRawMaxCapacity") ?? intProp("NominalChargeCapacity")
+        let rawMaxCap = intProp("AppleRawMaxCapacity")
+            ?? intProp("NominalChargeCapacity")
+            ?? (batteryData["MaxCapacity"] as? NSNumber)?.intValue
         let rawCurrentCap = intProp("AppleRawCurrentCapacity")
         let currentPercent = intProp("CurrentCapacity")
         let cycleCount = intProp("CycleCount")
@@ -155,10 +249,21 @@ final class BatteryDiagnosticsCollector: @unchecked Sendable {
         let isCharging = (property("IsCharging") as? NSNumber)?.boolValue ?? false
         let fullyCharged = (property("FullyCharged") as? NSNumber)?.boolValue ?? false
 
-        let temperature: Double? = intProp("Temperature").flatMap { raw in
-            let celsius = Double(raw) / 100.0
-            return (0...90).contains(celsius) ? celsius : nil
-        }
+        let temperature: Double? = {
+            let candidates: [Int?] = [
+                intProp("VirtualTemperature"),
+                intProp("Temperature"),
+                (batteryData["VirtualTemperature"] as? NSNumber)?.intValue,
+                (batteryData["Temperature"] as? NSNumber)?.intValue,
+                (batteryData["BatteryTemperature"] as? NSNumber)?.intValue
+            ]
+            for raw in candidates.compactMap({ $0 }) {
+                if let normalized = BatteryDiagnosticsParser.normalizeTemperatureCelsius(raw) {
+                    return normalized
+                }
+            }
+            return nil
+        }()
 
         let voltage: Double? = intProp("Voltage").flatMap { raw in
             let volts = Double(raw) / 1000.0
@@ -195,6 +300,7 @@ final class BatteryDiagnosticsCollector: @unchecked Sendable {
                 maxCapacityMAh: rawMaxCap,
                 designCapacityMAh: designCap
             ),
+            batteryCondition: nil,
             temperatureCelsius: temperature,
             voltageVolts: voltage,
             amperageAmps: amperage,
@@ -204,6 +310,17 @@ final class BatteryDiagnosticsCollector: @unchecked Sendable {
             fullyCharged: fullyCharged,
             timeRemainingMinutes: timeRemaining
         )
+    }
+
+    private func readSystemProfilerPower() -> (healthPercent: Double?, condition: String?, cycleCount: Int?, maxCapacityMAh: Int?) {
+        guard let result = CommandRunner.run(
+            "/usr/sbin/system_profiler",
+            arguments: ["SPPowerDataType", "-json"],
+            timeout: 4
+        ), !result.timedOut, result.terminationStatus == 0 else {
+            return (nil, nil, nil, nil)
+        }
+        return BatteryDiagnosticsParser.parseSystemProfilerPowerJSON(result.standardOutput)
     }
 
     private func sampleSleepAssertions() -> [SleepAssertionItem] {

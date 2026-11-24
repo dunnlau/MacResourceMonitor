@@ -13,16 +13,16 @@
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111111?logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-0A84FF">
-  <img alt="Version" src="https://img.shields.io/badge/version-3.0.0-0A84FF">
+  <img alt="Version" src="https://img.shields.io/badge/version-3.0.1-0A84FF">
   <img alt="CI" src="https://github.com/dunnlau/MacResourceMonitor/actions/workflows/ci.yml/badge.svg">
 </p>
 
-> 当前版本：**3.0.0（Build 54）**
+> 当前版本：**3.0.1（Build 55）**
 
-基于 SwiftUI 的原生仪表盘与菜单栏监控，集中查看系统资源、进程流量、本地开发端口、网络诊断、硬件供电、电池健康与外设状态。支持明暗主题，以不同指标色和清晰文字层级呈现数据。
+基于 SwiftUI 的原生仪表盘与菜单栏监控，集中查看系统概览、磁盘存储、网络监控、电源与接口以及显示与外设状态。支持明暗主题，以不同指标色和清晰文字层级呈现数据。
 ## 下载与安装
 
-**[下载 MacResourceMonitor-3.0.0.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v3.0.0/MacResourceMonitor-3.0.0.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
+**[下载 MacResourceMonitor-3.0.1.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v3.0.1/MacResourceMonitor-3.0.1.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
 
 需要 **macOS 26 或更高版本，以及 Apple Silicon 芯片**。不支持 Intel Mac 和旧版 macOS。
 
@@ -35,16 +35,18 @@
 如需校验下载完整性，将同名 `.zip.sha256` 文件下载到相同目录，运行：
 
 ```zsh
-shasum -a 256 -c MacResourceMonitor-3.0.0.zip.sha256
+shasum -a 256 -c MacResourceMonitor-3.0.1.zip.sha256
 ```
 
 ## 功能概览
 
 | 模块 | 功能 |
 | --- | --- |
-| 系统监控 | **性能概览**：CPU/内存负载、2 分钟双轴走势、Apple Silicon **P/E 核分核负载**与 **GPU 利用率/显存**、温控风扇与高负载进程。<br>**磁盘存储**：实时磁盘读写速率与 2 分钟走势、主磁盘 NVMe SMART 健康度、挂载卷宗容量、可清除空间与外接卷一键安全推出 |
-| 网络与服务 | **进程流量**：本地代理穿透、宿主 `.app` 归属与重复隧道流量剥离。<br>**本地端口**：监听中 TCP 端口列表、应用归属、一键复制/打开 `localhost` 与安全停止进程。<br>**网络诊断**：Wi-Fi 信号/信噪比/速率/频段信道、IP/网关/DNS/代理配置与网关/公网延迟走势 |
-| 硬件与供电 | **接口线缆**：只读检测 USB-C、MagSafe、USB4、Thunderbolt、DisplayPort、USB-PD 协商功率上限与线缆 E-Marker 标识。<br>**电池能耗**：电池健康度、循环次数、电芯温度/电压/电流、实时功耗拆解与阻止休眠进程检测。<br>**外设显示**：已连显示器分辨率/刷新率/HDR 与蓝牙/HID 无线外设电量 |
+| 系统概览 | CPU/内存负载、2 分钟双轴走势、Apple Silicon **P/E 核分核负载**与 **GPU 利用率/显存**、温控风扇与高负载进程 |
+| 磁盘存储 | 实时磁盘读写速率与 2 分钟走势、主磁盘 NVMe SMART 健康度、挂载卷宗容量、可清除空间与外接卷一键安全推出 |
+| 网络监控 | **进程流量**：本地代理穿透、宿主 `.app` 归属与重复隧道流量剥离。<br>**本地端口**：监听中 TCP 端口列表、应用归属、一键复制/打开 `localhost` 与安全停止进程。<br>**网络诊断**：Wi-Fi 信号/信噪比/速率/频段信道、IP/网关/DNS/代理配置与网关/公网延迟走势 |
+| 电源与接口 | **电池能耗**：电池健康度、官方电池状态、循环次数、电芯温度/电压/电流、实时充/放电功耗拆解与阻止休眠进程检测。<br>**接口线缆**：只读检测 USB-C、MagSafe、USB4、Thunderbolt、DisplayPort、USB-PD 协商功率上限与线缆 E-Marker 标识 |
+| 显示与外设 | 已连显示器分辨率/刷新率/HDR 与蓝牙/HID 无线外设电量 |
 | 偏好设置 | 顶部菜单栏显示项自由开关（温度/CPU/内存/网速/功耗）、高温与持续高负载本地通知提醒、开机自动启动（`SMAppService`） |
 
 菜单栏弹窗集中展示核心负载指标、**当前活跃进程流量 Top 3** 与硬件供电状态。
@@ -61,11 +63,11 @@ shasum -a 256 -c MacResourceMonitor-3.0.0.zip.sha256
 
 进程归属取决于 macOS 暴露的计数器；短连接及暂停采样期间的流量可能遗漏，过滤后的代理数据不能作为完整流量账单。温度、风扇和线缆字段取决于硬件支持。
 
-## 3.0.0 更新
+## 3.0.1 更新
 
-- **网络与服务整合**：将「进程流量」升级为「网络与服务」，页内新增「本地端口」（TCP 监听扫描、复制/打开 `localhost`、安全 `SIGTERM`）与「网络诊断」（CoreWLAN Wi-Fi 质量、IP/DNS/代理配置与网关/公网延迟折线）。
-- **外设与显示监测**：在「硬件与供电」页内新增「外设显示」分段，展示显示器分辨率/刷新率/HDR 与蓝牙/HID 无线外设电量。
-- **偏好设置**：在侧边栏底部新增克制的「偏好设置」入口，支持自定义顶部菜单栏指标、高温/持续高负载本地通知提醒与开机自动启动（`SMAppService`）。
+- **侧边栏布局与命名优化**：将「磁盘存储」与「显示与外设」提升为独立侧边栏，将「电池能耗」置于「电源与接口」的「接口线缆」之前（并作为默认首屏），统一精炼菜单命名（系统概览 / 磁盘存储 / 网络监控 / 电源与接口 / 显示与外设 / 偏好设置）。
+- **修复电池健康度与电芯温度读取**：兼容 `AppleSmartBattery` 的嵌套 `BatteryData` 字典与 0.01K 温度换算，新增 `system_profiler SPPowerDataType` 官方健康度/电池状态兜底与 SMC `TB0T/TB1T/TB2T` 电池温度兜底；电池供电时显示实时放电功率，并去除阻止休眠列表中 PID 的千位逗号。
+- **补全网络 IPv6 信息**：在「网络监控 → 网络诊断」中展示本机 IPv6 地址（优先公网地址并兼容链路本地地址）与 IPv6 网关，支持直接选中复制。
 
 历史版本说明保留在 [GitHub Releases](https://github.com/dunnlau/MacResourceMonitor/releases)。
 
@@ -95,7 +97,7 @@ open "Mac资源监控.app"
 
 ## 版本信息
 
-- App 版本：3.0.0
-- Build：54
+- App 版本：3.0.1
+- Build：55
 - Bundle ID：`io.github.svsvnm.MacResourceMonitor`
 - 构建目标：macOS 26.0+，arm64
