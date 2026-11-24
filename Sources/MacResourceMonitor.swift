@@ -1547,7 +1547,6 @@ private struct CablePortCard: View {
 private enum DashboardSection: String, CaseIterable, Identifiable {
     case monitor = "系统监控"
     case traffic = "进程流量"
-    case aiUsage = "AI 用量"
     case ports = "接口监测"
 
     var id: String { rawValue }
@@ -1556,7 +1555,6 @@ private enum DashboardSection: String, CaseIterable, Identifiable {
         switch self {
         case .monitor: return "gauge.with.dots.needle.50percent"
         case .traffic: return "point.3.connected.trianglepath.dotted"
-        case .aiUsage: return "terminal"
         case .ports: return "cable.connector"
         }
     }
@@ -1569,7 +1567,6 @@ private enum DashboardSection: String, CaseIterable, Identifiable {
         switch self {
         case .monitor: return "性能与硬件状态"
         case .traffic: return "实时进程上下行"
-        case .aiUsage: return "Antigravity 配额与模型用量"
         case .ports: return "USB-C、雷雳与供电"
         }
     }
@@ -1578,7 +1575,6 @@ private enum DashboardSection: String, CaseIterable, Identifiable {
         switch self {
         case .monitor: return "SYSTEM / LIVE"
         case .traffic: return "NETWORK / PROCESS"
-        case .aiUsage: return "AI / QUOTA"
         case .ports: return "PORTS / POWER"
         }
     }
@@ -1899,7 +1895,6 @@ private struct SidebarNavigationItem: View {
 private struct DashboardView: View {
     @ObservedObject var model: MonitorModel
     @ObservedObject var processNetworkModel: ProcessNetworkMonitor
-    @ObservedObject var codexQuotaModel: CodexQuotaMonitor
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Binding var selectedSection: DashboardSection
@@ -1998,8 +1993,6 @@ private struct DashboardView: View {
             }
         } else if selectedSection == .traffic {
             ProcessTrafficView(model: processNetworkModel)
-        } else if selectedSection == .aiUsage {
-            CodexQuotaView(model: codexQuotaModel)
         } else {
             PortMonitorView(
                 monitor: model.snapshot.cableMonitor,
@@ -2115,12 +2108,6 @@ private struct DashboardView: View {
 
     private var heroFootnote: String {
         switch selectedSection {
-        case .aiUsage:
-            if let date = codexQuotaModel.state.snapshot?.updatedAt {
-                let account = codexQuotaModel.state.snapshot?.accountEmail ?? "已连接账号"
-                return "\(account) · 更新于 \(date.formatted(date: .omitted, time: .standard))"
-            }
-            return codexQuotaModel.state.isRefreshing ? "正在同步最新订阅额度…" : "每分钟自动更新"
         case .monitor:
             if model.isRefreshingExpandedMetrics { return "正在更新传感器" }
             let date = model.snapshot.expandedMetricsUpdatedAt ?? model.snapshot.updatedAt
@@ -2144,7 +2131,6 @@ private struct DashboardView: View {
 
     private var heroActionTitle: String {
         switch selectedSection {
-        case .aiUsage: return codexQuotaModel.state.isRefreshing ? "同步中" : "刷新配额"
         case .monitor: return "刷新"
         case .traffic: return "清零累计"
         case .ports: return model.isRefreshingCable ? "检测中" : "重新检测"
@@ -2153,7 +2139,6 @@ private struct DashboardView: View {
 
     private var isHeroActionDisabled: Bool {
         switch selectedSection {
-        case .aiUsage: return codexQuotaModel.state.isRefreshing
         case .monitor: return false
         case .traffic: return false
         case .ports: return model.isRefreshingCable
@@ -2162,8 +2147,6 @@ private struct DashboardView: View {
 
     private func performHeroAction() {
         switch selectedSection {
-        case .aiUsage:
-            codexQuotaModel.refresh(force: true)
         case .monitor:
             model.refresh()
         case .traffic:
@@ -2177,8 +2160,6 @@ private struct DashboardView: View {
         switch selectedSection {
         case .monitor: return "处理器、内存、温控与硬件实时状态"
         case .traffic: return "按应用进程实时统计上下行速率与累计流量"
-        case .aiUsage:
-            return "Gemini 与 Claude / GPT 模型池订阅配额"
         case .ports: return "USB-C、雷雳接口连接与充电功率协商"
         }
     }
@@ -2191,8 +2172,6 @@ private struct MenuBarPresentationState {
 private struct MenuBarPanel: View {
     @ObservedObject var model: MonitorModel
     let processNetworkModel: ProcessNetworkMonitor
-    let codexQuotaModel: CodexQuotaMonitor
-    @Binding var selectedSection: DashboardSection
     @Environment(\.openWindow) private var openWindow
     @Environment(\.colorScheme) private var colorScheme
     @State private var presentation = MenuBarPresentationState()
@@ -2207,15 +2186,6 @@ private struct MenuBarPanel: View {
             processTrafficCard
 
             hardwareSummaryCard
-
-            CodexQuotaMenuSummary(model: codexQuotaModel) {
-                selectedSection = .aiUsage
-                NSApp.setActivationPolicy(.regular)
-                NSApp.activate(ignoringOtherApps: true)
-                openWindow(id: "dashboard")
-            }
-            .padding(11)
-            .stableMenuCard(cornerRadius: 10)
 
             menuFooter
                 .padding(.horizontal, 2)
@@ -2661,13 +2631,12 @@ private struct MacResourceMonitorApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var applicationDelegate
     @StateObject private var model = MonitorModel()
     @StateObject private var processNetworkModel = ProcessNetworkMonitor()
-    @StateObject private var codexQuotaModel = CodexQuotaMonitor(defaultProvider: .antigravity, userDefaults: .standard)
     @State private var selectedSection: DashboardSection = .monitor
 
     var body: some Scene {
         Window("Mac 资源监控", id: "dashboard") {
             DashboardView(model: model, processNetworkModel: processNetworkModel,
-                          codexQuotaModel: codexQuotaModel, selectedSection: $selectedSection)
+                          selectedSection: $selectedSection)
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
@@ -2675,8 +2644,7 @@ private struct MacResourceMonitorApp: App {
         }
 
         MenuBarExtra {
-            MenuBarPanel(model: model, processNetworkModel: processNetworkModel,
-                         codexQuotaModel: codexQuotaModel, selectedSection: $selectedSection)
+            MenuBarPanel(model: model, processNetworkModel: processNetworkModel)
         } label: {
             MenuBarStatusLabel(model: model)
         }

@@ -1,6 +1,0 @@
-{
-  "version": 1,
-  "providers": [
-    { "id": "antigravity", "enabled": true }
-  ]
-}

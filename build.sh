@@ -17,9 +17,6 @@ cp "$SCRIPT_DIR/Assets/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
 cp "$WHATCABLE_ASSETS/whatcable-cli" "$HELPERS_DIR/whatcable-cli"
 chmod 755 "$HELPERS_DIR/whatcable-cli"
 ditto "$WHATCABLE_ASSETS/WhatCable_WhatCableCore.bundle" "$RESOURCES_DIR/WhatCable_WhatCableCore.bundle"
-cp "$SCRIPT_DIR/Assets/CodexQuotaConfig.json" "$RESOURCES_DIR/CodexQuotaConfig.json"
-ditto "$SCRIPT_DIR/Assets/CodexBarLicenses" "$RESOURCES_DIR/CodexBarLicenses"
-/bin/zsh "$SCRIPT_DIR/Scripts/prepare-codexbar.sh"
 
 SDK_FLAGS=()
 if [[ -d "/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk" ]]; then
@@ -41,8 +38,6 @@ xcrun swiftc \
   -framework IOKit \
   -framework SystemConfiguration \
   "$SCRIPT_DIR/Sources/CommandRunner.swift" \
-  "$SCRIPT_DIR/Sources/CodexQuotaMonitor.swift" \
-  "$SCRIPT_DIR/Sources/CodexQuotaView.swift" \
   "$SCRIPT_DIR/Sources/ProcessNetworkMonitor.swift" \
   "$SCRIPT_DIR/Sources/ProcessTrafficView.swift" \
   "$SCRIPT_DIR/Sources/CableMonitor.swift" \
