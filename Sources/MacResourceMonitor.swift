@@ -2291,7 +2291,7 @@ private struct DashboardView: View {
             model.refresh(forceBatteryDiagnosticsRefresh: true)
             model.refreshCableMonitor()
         case .peripherals:
-            peripheralsModel.refresh()
+            peripheralsModel.refresh(forceBluetooth: true)
         case .settings:
             break
         }
