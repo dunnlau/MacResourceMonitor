@@ -13,16 +13,16 @@
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111111?logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-0A84FF">
-  <img alt="Version" src="https://img.shields.io/badge/version-3.2.0-0A84FF">
+  <img alt="Version" src="https://img.shields.io/badge/version-3.2.1-0A84FF">
   <img alt="CI" src="https://github.com/dunnlau/MacResourceMonitor/actions/workflows/ci.yml/badge.svg">
 </p>
 
-> Current version: **3.2.0 (Build 59)**
+> Current version: **3.2.1 (Build 60)**
 
 A native SwiftUI dashboard and menu bar monitor for system resources, disk storage, per-process network traffic, local listening ports, Wi-Fi diagnostics, battery health, hardware ports, and peripherals. Light and dark appearances use distinct metric colors and clear text hierarchy.
 ## Download and Install
 
-**[Download MacResourceMonitor-3.2.0.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v3.2.0/MacResourceMonitor-3.2.0.zip)** · [Release notes and checksums](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
+**[Download MacResourceMonitor-3.2.1.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v3.2.1/MacResourceMonitor-3.2.1.zip)** · [Release notes and checksums](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
 
 Requires **macOS 26 or later and Apple Silicon**. Intel Macs and earlier macOS versions are not supported.
 
@@ -35,7 +35,7 @@ The app is ad-hoc signed, not Apple Developer ID signed or notarized. If macOS b
 For an integrity check, download the matching `.zip.sha256` file into the same directory and run:
 
 ```zsh
-shasum -a 256 -c MacResourceMonitor-3.2.0.zip.sha256
+shasum -a 256 -c MacResourceMonitor-3.2.1.zip.sha256
 ```
 
 ## Features
@@ -63,11 +63,10 @@ The menu bar popover provides an at-a-glance view of core system load, **top thr
 
 Process attribution depends on the counters macOS exposes. Short-lived connections and traffic while sampling is paused may be missed; filtered proxy totals are not a full accounting of all traffic. Sensor and cable fields depend on hardware support.
 
-## What's New in 3.2.0
+## What's New in 3.2.1
 
-- **Full-App Bento Grid & Radial Gauge Overhaul**: Extended the aligned Bento Grid + `RadialGaugeRing` visual design language from System Overview to Storage, Network, Power & Ports, Displays & Peripherals, and Preferences.
-- **Unified Power & Ports Workspace**: Merged Battery Health/Charge gauges, live Power Flow, USB-C / Thunderbolt port cards, and Sleep Assertions into a single zero-tab Bento page.
-- **Unified Network Command Center**: Consolidated live App Traffic, Wi-Fi Signal/Link gauge, Gateway/Internet Latency chart, and Routing/IP/DNS config into one unified workspace with an inline-switchable Process Traffic / Local Ports table card.
+- **Third-Party Bluetooth & BLE Peripheral Battery Support**: Added `system_profiler SPBluetoothDataType -json` telemetry alongside expanded IOKit Bluetooth/HID matching so third-party BLE mice/keyboards (e.g., Keychron, Logitech), game controllers, and AirPods (Left / Right / Case) report battery levels accurately.
+- **Accurate Device Type Classification**: Uses macOS Bluetooth `device_minorType` metadata to classify peripherals (Mouse, Keyboard, Headphones, Gamepad) even when the model name omits the device type, and deduplicates overlapping Bluetooth/IOKit entries by normalized MAC address.
 
 Older release notes remain in [GitHub Releases](https://github.com/dunnlau/MacResourceMonitor/releases).
 
@@ -97,7 +96,7 @@ See [third-party notices](THIRD_PARTY_NOTICES.md) for attribution and license te
 
 ## Version
 
-- App version: 3.2.0
-- Build: 59
+- App version: 3.2.1
+- Build: 60
 - Bundle ID: `io.github.svsvnm.MacResourceMonitor`
 - Target: macOS 26.0+, arm64

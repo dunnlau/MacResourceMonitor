@@ -142,6 +142,44 @@ struct MonitoringTests {
         let preferredV6 = NetworkDiagnosticsParser.preferredIPv6(from: ["fe80::1%en0", "240e:1234::88", "::1"])
         expect(preferredV6 == "240e:1234::88", "global IPv6 preferred over link-local")
         expect(NetworkDiagnosticsParser.preferredIPv6(from: ["fe80::abcd%en0"]) == "fe80::abcd", "link-local IPv6 fallback strips scope")
+
+        let spBluetoothJSON = Data(#"""
+        {
+          "SPBluetoothDataType": [
+            {
+              "device_connected": [
+                {
+                  "Keychron M6 8K": {
+                    "device_address": "AA:BB:CC:DD:EE:FF",
+                    "device_batteryLevelMain": "81%",
+                    "device_minorType": "Mouse"
+                  }
+                },
+                {
+                  "AirPods Pro": {
+                    "device_address": "11:22:33:44:55:66",
+                    "device_batteryLevelLeft": "95%",
+                    "device_batteryLevelRight": "90%",
+                    "device_batteryLevelCase": "72%",
+                    "device_minorType": "Headphones"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+        """#.utf8)
+        let btDevices = PeripheralsBluetoothParser.parseSystemProfilerBluetoothJSON(spBluetoothJSON)
+        expect(btDevices.count == 4, "Bluetooth profiler parsed main mouse + AirPods L/R/Case")
+        let keychron = btDevices.first { $0.name == "Keychron M6 8K" }
+        expect(keychron?.batteryPercent == 81 && keychron?.category == "鼠标", "Keychron M6 8K parsed as mouse with 81%")
+        let iokitDup = [
+            PeripheralBatteryItem(id: "aabbccddeeff", name: "Keychron M6 8K", category: "无线外设", batteryPercent: 81, transport: "Bluetooth"),
+            PeripheralBatteryItem(id: "dongle-1", name: "USB Wireless Keyboard", category: "键盘", batteryPercent: 55, transport: "USB")
+        ]
+        let mergedDevices = PeripheralsBluetoothParser.mergeBatteryDevices(iokit: iokitDup, bluetooth: btDevices)
+        expect(mergedDevices.count == 5, "deduplicates overlapping Bluetooth/IOKit device while keeping unique IOKit device")
+        expect(mergedDevices.first?.name == "USB Wireless Keyboard", "merged devices sorted by battery percent ascending")
         print("LocalPorts, NetworkDiagnostics, Peripherals & Battery profiler parsers passed")
     }
 }
