@@ -72,6 +72,12 @@ enum PeripheralClassifier {
     }
 }
 
+struct BluetoothProfilerSnapshot: Equatable {
+    var devices: [PeripheralBatteryItem] = []
+    var minorTypesByName: [String: String] = [:]
+    var baseNamesWithBattery: Set<String> = []
+}
+
 enum PeripheralsBluetoothParser {
     static func parsePercent(_ value: Any?) -> Int? {
         if let number = value as? NSNumber {
@@ -99,13 +105,13 @@ enum PeripheralsBluetoothParser {
         return normalized.isEmpty ? nil : normalized
     }
 
-    static func parseSystemProfilerBluetoothJSON(_ data: Data) -> [PeripheralBatteryItem] {
+    static func parseSystemProfilerBluetoothDetails(_ data: Data) -> BluetoothProfilerSnapshot {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let entries = root["SPBluetoothDataType"] as? [[String: Any]] else {
-            return []
+            return BluetoothProfilerSnapshot()
         }
 
-        var devices: [PeripheralBatteryItem] = []
+        var snapshot = BluetoothProfilerSnapshot()
         var seenIDs = Set<String>()
 
         for entry in entries {
@@ -115,14 +121,20 @@ enum PeripheralsBluetoothParser {
                     let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !name.isEmpty, let attrs = rawAttrs as? [String: Any] else { continue }
 
+                    let lowerName = name.lowercased()
                     let address = normalizeAddress(attrs["device_address"] as? String)
-                    let minorType = attrs["device_minorType"] as? String
+                    let minorType = (attrs["device_minorType"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let minorType, !minorType.isEmpty {
+                        snapshot.minorTypesByName[lowerName] = minorType
+                    }
+
                     let category = PeripheralClassifier.inferCategory(for: name, minorType: minorType)
-                    let baseID = address ?? name.lowercased()
+                    let baseID = address ?? lowerName
 
                     if let mainPercent = parsePercent(attrs["device_batteryLevelMain"]) {
                         if seenIDs.insert(baseID).inserted {
-                            devices.append(PeripheralBatteryItem(
+                            snapshot.baseNamesWithBattery.insert(lowerName)
+                            snapshot.devices.append(PeripheralBatteryItem(
                                 id: baseID,
                                 name: name,
                                 category: category,
@@ -142,7 +154,8 @@ enum PeripheralsBluetoothParser {
                         if let pct = parsePercent(attrs[component.key]) {
                             let itemID = "\(baseID)-\(component.suffix)"
                             if seenIDs.insert(itemID).inserted {
-                                devices.append(PeripheralBatteryItem(
+                                snapshot.baseNamesWithBattery.insert(lowerName)
+                                snapshot.devices.append(PeripheralBatteryItem(
                                     id: itemID,
                                     name: "\(name)（\(component.label)）",
                                     category: category,
@@ -156,16 +169,77 @@ enum PeripheralsBluetoothParser {
             }
         }
 
+        return snapshot
+    }
+
+    static func parseSystemProfilerBluetoothJSON(_ data: Data) -> [PeripheralBatteryItem] {
+        parseSystemProfilerBluetoothDetails(data).devices
+    }
+
+    /// Parses `pmset -g accps` output, which exposes BLE GATT & accessory batteries
+    /// (e.g., third-party BLE mice, AirPods, keyboards) omitted by `SPBluetoothDataType` and `ioreg`.
+    static func parsePmsetAccpsOutput(
+        _ output: String,
+        minorTypesByName: [String: String] = [:]
+    ) -> [PeripheralBatteryItem] {
+        var devices: [PeripheralBatteryItem] = []
+        var seenIDs = Set<String>()
+
+        for rawLine in output.split(whereSeparator: \.isNewline) {
+            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("-") else { continue }
+
+            let afterDash = String(trimmed.dropFirst())
+            guard let idStart = afterDash.range(of: "(id="),
+                  let idEnd = afterDash.range(of: ")", range: idStart.upperBound..<afterDash.endIndex) else {
+                continue
+            }
+
+            let name = afterDash[..<idStart.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { continue }
+
+            let lowerName = name.lowercased()
+            if lowerName.hasPrefix("internalbattery") {
+                continue
+            }
+
+            let sourceID = afterDash[idStart.upperBound..<idEnd.lowerBound]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let remainder = afterDash[idEnd.upperBound...]
+
+            guard let pctRange = remainder.range(of: #"\b(\d{1,3})%"#, options: .regularExpression) else {
+                continue
+            }
+            let pctText = remainder[pctRange].replacingOccurrences(of: "%", with: "")
+            guard let percent = Int(pctText), (0...100).contains(percent) else { continue }
+
+            let itemID = sourceID.isEmpty ? "accps-\(lowerName)" : "accps-\(sourceID)"
+            guard seenIDs.insert(itemID).inserted else { continue }
+
+            let minorType = minorTypesByName[lowerName]
+            let category = PeripheralClassifier.inferCategory(for: name, minorType: minorType)
+
+            devices.append(PeripheralBatteryItem(
+                id: itemID,
+                name: name,
+                category: category,
+                batteryPercent: percent,
+                transport: "Bluetooth"
+            ))
+        }
+
         return devices
     }
 
     static func mergeBatteryDevices(
         iokit: [PeripheralBatteryItem],
-        bluetooth: [PeripheralBatteryItem]
+        bluetooth: [PeripheralBatteryItem],
+        accps: [PeripheralBatteryItem] = [],
+        bluetoothBaseNames: Set<String> = []
     ) -> [PeripheralBatteryItem] {
         var merged: [PeripheralBatteryItem] = []
         var seenIDs = Set<String>()
-        var seenNames = Set<String>()
+        var seenNames = bluetoothBaseNames
 
         for item in bluetooth {
             let normName = item.name.lowercased()
@@ -173,6 +247,16 @@ enum PeripheralsBluetoothParser {
                 seenNames.insert(normName)
                 merged.append(item)
             }
+        }
+
+        for item in accps {
+            let normName = item.name.lowercased()
+            if seenIDs.contains(item.id) || seenNames.contains(normName) {
+                continue
+            }
+            seenIDs.insert(item.id)
+            seenNames.insert(normName)
+            merged.append(item)
         }
 
         for item in iokit {
@@ -194,7 +278,7 @@ enum PeripheralsBluetoothParser {
     }
 }
 
-/// Collects HID/Bluetooth battery info via IOKit + SPBluetoothDataType and display modes via AppKit/CoreGraphics.
+/// Collects HID/Bluetooth battery info via IOKit + pmset accps + SPBluetoothDataType and display modes via AppKit/CoreGraphics.
 enum PeripheralsCollector {
     static func collectIOKitBatteryDevices() -> [PeripheralBatteryItem] {
         var devices: [PeripheralBatteryItem] = []
@@ -263,7 +347,7 @@ enum PeripheralsCollector {
         return devices
     }
 
-    static func collectBluetoothProfilerDevices() -> [PeripheralBatteryItem] {
+    static func collectBluetoothProfilerDetails() -> BluetoothProfilerSnapshot {
         guard let result = CommandRunner.run(
             "/usr/sbin/system_profiler",
             arguments: ["SPBluetoothDataType", "-json"],
@@ -271,21 +355,43 @@ enum PeripheralsCollector {
         ),
         !result.timedOut,
         result.terminationStatus == 0 else {
+            return BluetoothProfilerSnapshot()
+        }
+        return PeripheralsBluetoothParser.parseSystemProfilerBluetoothDetails(result.standardOutput)
+    }
+
+    static func collectPmsetAccpsDevices(minorTypesByName: [String: String]) -> [PeripheralBatteryItem] {
+        guard let result = CommandRunner.run(
+            "/usr/bin/pmset",
+            arguments: ["-g", "accps"],
+            timeout: 2.0
+        ),
+        !result.timedOut,
+        result.terminationStatus == 0 else {
             return []
         }
-        return PeripheralsBluetoothParser.parseSystemProfilerBluetoothJSON(result.standardOutput)
+        return PeripheralsBluetoothParser.parsePmsetAccpsOutput(
+            result.outputString,
+            minorTypesByName: minorTypesByName
+        )
     }
 
     static func collectBatteryDevices(
-        cachedBluetooth: [PeripheralBatteryItem]?,
+        cachedBluetooth: BluetoothProfilerSnapshot?,
         refreshBluetooth: Bool
-    ) -> (devices: [PeripheralBatteryItem], bluetoothCache: [PeripheralBatteryItem]) {
+    ) -> (devices: [PeripheralBatteryItem], bluetoothCache: BluetoothProfilerSnapshot) {
         let iokit = collectIOKitBatteryDevices()
-        let bluetooth = (refreshBluetooth || cachedBluetooth == nil)
-            ? collectBluetoothProfilerDevices()
-            : (cachedBluetooth ?? [])
-        let merged = PeripheralsBluetoothParser.mergeBatteryDevices(iokit: iokit, bluetooth: bluetooth)
-        return (merged, bluetooth)
+        let bluetoothSnapshot = (refreshBluetooth || cachedBluetooth == nil)
+            ? collectBluetoothProfilerDetails()
+            : (cachedBluetooth ?? BluetoothProfilerSnapshot())
+        let accps = collectPmsetAccpsDevices(minorTypesByName: bluetoothSnapshot.minorTypesByName)
+        let merged = PeripheralsBluetoothParser.mergeBatteryDevices(
+            iokit: iokit,
+            bluetooth: bluetoothSnapshot.devices,
+            accps: accps,
+            bluetoothBaseNames: bluetoothSnapshot.baseNamesWithBattery
+        )
+        return (merged, bluetoothSnapshot)
     }
 
     @MainActor
@@ -335,7 +441,7 @@ final class PeripheralsMonitor: ObservableObject {
     private var isActive = false
     private var pollTask: Task<Void, Never>?
     private var generation: UInt64 = 0
-    private var cachedBluetoothDevices: [PeripheralBatteryItem]? = nil
+    private var cachedBluetoothSnapshot: BluetoothProfilerSnapshot? = nil
     private var bluetoothPollTick = 0
 
     deinit { pollTask?.cancel() }
@@ -366,9 +472,9 @@ final class PeripheralsMonitor: ObservableObject {
         isRefreshing = true
         let displays = PeripheralsCollector.collectDisplays()
         let currentGen = generation
-        let shouldRefreshBluetooth = forceBluetooth || cachedBluetoothDevices == nil || bluetoothPollTick == 0
+        let shouldRefreshBluetooth = forceBluetooth || cachedBluetoothSnapshot == nil || bluetoothPollTick == 0
         bluetoothPollTick = (bluetoothPollTick + 1) % 3
-        let previousBluetooth = cachedBluetoothDevices
+        let previousBluetooth = cachedBluetoothSnapshot
 
         queue.async { [weak self] in
             let collected = PeripheralsCollector.collectBatteryDevices(
@@ -379,7 +485,7 @@ final class PeripheralsMonitor: ObservableObject {
                 guard let self else { return }
                 self.isRefreshing = false
                 guard self.generation == currentGen else { return }
-                self.cachedBluetoothDevices = collected.bluetoothCache
+                self.cachedBluetoothSnapshot = collected.bluetoothCache
                 self.snapshot = PeripheralsSnapshot(
                     batteryDevices: collected.devices,
                     displays: displays,
