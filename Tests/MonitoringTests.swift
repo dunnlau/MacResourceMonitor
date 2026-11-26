@@ -180,6 +180,43 @@ struct MonitoringTests {
         let mergedDevices = PeripheralsBluetoothParser.mergeBatteryDevices(iokit: iokitDup, bluetooth: btDevices)
         expect(mergedDevices.count == 5, "deduplicates overlapping Bluetooth/IOKit device while keeping unique IOKit device")
         expect(mergedDevices.first?.name == "USB Wireless Keyboard", "merged devices sorted by battery percent ascending")
+
+        let bleNoBatteryJSON = Data(#"""
+        {
+          "SPBluetoothDataType": [
+            {
+              "device_connected": [
+                {
+                  "Keychron M6 8K": {
+                    "device_address": "F3:45:D5:C6:87:1B",
+                    "device_minorType": "Mouse",
+                    "device_services": "0x400020 < HID BLE >"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+        """#.utf8)
+        let btDetails = PeripheralsBluetoothParser.parseSystemProfilerBluetoothDetails(bleNoBatteryJSON)
+        expect(btDetails.devices.isEmpty && btDetails.minorTypesByName["keychron m6 8k"] == "Mouse", "extracts minorType even when SPBluetoothDataType omits battery")
+
+        let accpsSample = """
+        Now drawing from 'AC Power'
+         -InternalBattery-0 (id=35848291)\t80%; AC attached; not charging present: true
+         - (id=64100023)\t84%; discharging present: true
+         -AirPods (id=64100024)\t100%; charging; 0:00 remaining present: true
+         -Keychron M6 8K (id=53221038)\t81%;
+        """
+        let accpsDevices = PeripheralsBluetoothParser.parsePmsetAccpsOutput(
+            accpsSample,
+            minorTypesByName: btDetails.minorTypesByName
+        )
+        expect(accpsDevices.count == 2, "pmset accps skips InternalBattery and unnamed entries")
+        let accpsMouse = accpsDevices.first { $0.name == "Keychron M6 8K" }
+        expect(accpsMouse?.batteryPercent == 81 && accpsMouse?.category == "鼠标", "Keychron M6 8K from pmset accps enriched with Mouse category")
+        let accpsAirPods = accpsDevices.first { $0.name == "AirPods" }
+        expect(accpsAirPods?.batteryPercent == 100 && accpsAirPods?.category == "音频设备", "AirPods from pmset accps parsed as audio device")
         print("LocalPorts, NetworkDiagnostics, Peripherals & Battery profiler parsers passed")
     }
 }

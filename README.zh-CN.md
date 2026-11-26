@@ -13,16 +13,16 @@
 <p align="center">
   <img alt="macOS 26+" src="https://img.shields.io/badge/macOS-26%2B-111111?logo=apple">
   <img alt="Apple Silicon" src="https://img.shields.io/badge/Apple%20Silicon-arm64-0A84FF">
-  <img alt="Version" src="https://img.shields.io/badge/version-3.2.1-0A84FF">
+  <img alt="Version" src="https://img.shields.io/badge/version-3.2.2-0A84FF">
   <img alt="CI" src="https://github.com/dunnlau/MacResourceMonitor/actions/workflows/ci.yml/badge.svg">
 </p>
 
-> 当前版本：**3.2.1（Build 60）**
+> 当前版本：**3.2.2（Build 61）**
 
 基于 SwiftUI 的原生仪表盘与菜单栏监控，集中查看系统概览、磁盘存储、网络监控、电源与接口以及显示与外设状态。支持明暗主题，以不同指标色和清晰文字层级呈现数据。
 ## 下载与安装
 
-**[下载 MacResourceMonitor-3.2.1.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v3.2.1/MacResourceMonitor-3.2.1.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
+**[下载 MacResourceMonitor-3.2.2.zip](https://github.com/dunnlau/MacResourceMonitor/releases/download/v3.2.2/MacResourceMonitor-3.2.2.zip)** · [发布说明与校验文件](https://github.com/dunnlau/MacResourceMonitor/releases/latest)
 
 需要 **macOS 26 或更高版本，以及 Apple Silicon 芯片**。不支持 Intel Mac 和旧版 macOS。
 
@@ -35,7 +35,7 @@
 如需校验下载完整性，将同名 `.zip.sha256` 文件下载到相同目录，运行：
 
 ```zsh
-shasum -a 256 -c MacResourceMonitor-3.2.1.zip.sha256
+shasum -a 256 -c MacResourceMonitor-3.2.2.zip.sha256
 ```
 
 ## 功能概览
@@ -63,10 +63,10 @@ shasum -a 256 -c MacResourceMonitor-3.2.1.zip.sha256
 
 进程归属取决于 macOS 暴露的计数器；短连接及暂停采样期间的流量可能遗漏，过滤后的代理数据不能作为完整流量账单。温度、风扇和线缆字段取决于硬件支持。
 
-## 3.2.1 更新
+## 3.2.2 更新
 
-- **支持第三方蓝牙 / BLE 外设电量显示**：新增 `system_profiler SPBluetoothDataType -json` 蓝牙电量采集并扩展 IOKit 蓝牙/HID 类匹配，补齐 Keychron 等第三方 BLE 鼠标/键盘、游戏手柄以及 AirPods（左耳 / 右耳 / 充电盒）电量展示。
-- **精准外设类型识别与去重**：优先使用 macOS 蓝牙 `device_minorType` 元数据识别设备类别（鼠标/键盘/音频设备/游戏手柄），并按标准化蓝牙地址与 IOKit 数据自动去重合并。
+- **接入 `pmset -g accps` 配件电源数据源**：修复 macOS 26/27 上 BLE GATT 蓝牙外设（如 Keychron M6 8K）及 AirPods 在 `SPBluetoothDataType` 和 `ioreg` 中缺失电量字段的问题，直接读取系统级配件电量。
+- **跨数据源设备类型补全**：将 `pmset -g accps` 读到的外设与 `SPBluetoothDataType` 中的 `device_minorType` 元数据关联，自动识别鼠标/键盘/音频设备/游戏手柄，并过滤本机内置电池与匿名电源节点。
 
 历史版本说明保留在 [GitHub Releases](https://github.com/dunnlau/MacResourceMonitor/releases)。
 
@@ -96,7 +96,7 @@ open "Mac资源监控.app"
 
 ## 版本信息
 
-- App 版本：3.2.1
-- Build：60
+- App 版本：3.2.2
+- Build：61
 - Bundle ID：`io.github.svsvnm.MacResourceMonitor`
 - 构建目标：macOS 26.0+，arm64
